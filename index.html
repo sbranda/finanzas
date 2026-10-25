@@ -72,7 +72,8 @@ form{display:grid;gap:14px}
 .seg input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
 .field{display:grid;gap:6px;min-width:0}
 .field>label{font-size:13px;font-weight:600;color:var(--muted)}
-input[type=text],input[type=date],textarea{width:100%;min-width:0;font:inherit;font-size:16px;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:11px 12px}
+select:disabled{opacity:.6}
+input[type=text],input[type=date],textarea,select{width:100%;min-width:0;font:inherit;font-size:16px;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:11px 12px}
 input:focus-visible,textarea:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #monto{font-family:var(--font-num);font-size:18px;font-weight:600}
 .row2{display:grid;grid-template-columns:1.2fr 1fr;gap:12px}
@@ -156,7 +157,11 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       <div class="field"><label for="monto">Monto (ARS)</label><input type="text" id="monto" inputmode="decimal" placeholder="0,00"></div>
       <div class="field"><label for="fecha">Fecha</label><input type="date" id="fecha"></div>
     </div>
-    <div class="field"><label for="concepto">Concepto</label><input type="text" id="concepto" maxlength="60" placeholder="Sueldo, supermercado, alquiler…"></div>
+    <div class="field">
+      <label for="conceptoSel">Concepto</label>
+      <select id="conceptoSel"></select>
+      <input type="text" id="concepto" maxlength="60" aria-label="Concepto nuevo" placeholder="O escribí uno nuevo: queda guardado en la lista">
+    </div>
     <p id="preview" class="preview" aria-live="polite"></p>
     <p id="msg" class="msg" role="status"></p>
     <button class="btn" type="submit" id="addBtn">Agregar ingreso</button>
@@ -235,13 +240,36 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     return rows.map(function(r,i){ return {id:uid()+i, persona:r[0], tipo:r[1], cents:r[2], concepto:r[3], fecha:today(r[4]), ts:i}; });
   }
 
+  // Lista de conceptos guardados: [{t:'in'|'out', n:'Sueldo'}]. Se arma sola con cada concepto nuevo.
+  function mergeConceptos(base, movs){
+    var seen = {}, out = [];
+    (base || []).concat((movs || []).filter(function(m){ return m.concepto; }).map(function(m){ return {t:m.tipo, n:m.concepto}; })).forEach(function(c){
+      if(!c || (c.t !== 'in' && c.t !== 'out')) return;
+      var n = clean(c.n); if(!n) return;
+      var k = c.t + '|' + pkey(n); if(seen[k]) return;
+      seen[k] = 1; out.push({t:c.t, n:n});
+    });
+    return out;
+  }
+
   var state;
   function load(){
     try{
       var raw = localStorage.getItem(KEY);
-      if(raw){ var s = JSON.parse(raw); if(s && Array.isArray(s.movs)) return s; }
+      if(raw){
+        var s = JSON.parse(raw);
+        if(s && Array.isArray(s.movs)){
+          s.conceptos = mergeConceptos(Array.isArray(s.conceptos) ? s.conceptos : [], s.movs);
+          return s;
+        }
+      }
     }catch(e){}
-    return {sample:true, movs:sample()};
+    var ms = sample();
+    return {sample:true, movs:ms, conceptos:mergeConceptos([], ms)};
+  }
+  function conceptoExiste(t, n){
+    var k = pkey(clean(n));
+    return state.conceptos.filter(function(c){ return c.t === t && pkey(c.n) === k; })[0];
   }
   function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
   state = load();
@@ -344,7 +372,23 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       box.appendChild(card);
     });
     renderChips(gs);
+    renderConceptos();
     renderPreview(gs, t);
+  }
+
+  function renderConceptos(){
+    var sel = $('conceptoSel'), t = tipo();
+    var list = state.conceptos.filter(function(c){ return c.t === t; }).map(function(c){ return c.n; })
+      .sort(function(a,b){ return a.localeCompare(b,'es'); });
+    sel.textContent = '';
+    sel.appendChild(h('option',{value:'',text:list.length ? 'Elegir concepto guardado…' : 'Sin conceptos guardados todavía'}));
+    list.forEach(function(n){ sel.appendChild(h('option',{value:n,text:n})); });
+    sel.disabled = !list.length;
+    syncSel();
+  }
+  function syncSel(){
+    var ex = conceptoExiste(tipo(), $('concepto').value);
+    $('conceptoSel').value = ex ? ex.n : '';
   }
 
   function renderChips(gs){
@@ -385,26 +429,33 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     var existing = groups().filter(function(g){ return g.key === pkey(name); })[0];
     if(existing) name = existing.name;
     var t = tipo();
-    if(state.sample){ state = {sample:false, movs:[]}; }
-    state.movs.push({id:uid(), persona:name, tipo:t, cents:c, concepto:clean($('concepto').value), fecha:fecha, ts:Date.now()});
+    if(state.sample){ state = {sample:false, movs:[], conceptos:[]}; }
+    var cn = clean($('concepto').value), nuevoConcepto = false;
+    if(cn){
+      var ya = conceptoExiste(t, cn);
+      if(ya){ cn = ya.n; } else { state.conceptos.push({t:t, n:cn}); nuevoConcepto = true; }
+    }
+    state.movs.push({id:uid(), persona:name, tipo:t, cents:c, concepto:cn, fecha:fecha, ts:Date.now()});
     save();
     opened.add(pkey(name)); // desplegar a la persona para ver el movimiento recién cargado
     $('monto').value = ''; $('concepto').value = '';
     render();
-    setMsg((t === 'in' ? 'Ingreso' : 'Egreso') + ' de ' + money(c) + ' guardado en ' + name + '.');
+    setMsg((t === 'in' ? 'Ingreso' : 'Egreso') + ' de ' + money(c) + ' guardado en ' + name + '.' + (nuevoConcepto ? ' "' + cn + '" quedó en la lista de conceptos.' : ''));
     $('monto').focus();
   });
 
   ['persona','monto'].forEach(function(id){ $(id).addEventListener('input', function(){ setMsg(''); renderAll(); }); });
   Array.prototype.forEach.call(document.querySelectorAll('input[name=tipo]'), function(r){
-    r.addEventListener('change', function(){ syncButton(); renderAll(); });
+    r.addEventListener('change', function(){ syncButton(); renderConceptos(); renderAll(); });
   });
+  $('conceptoSel').addEventListener('change', function(){ $('concepto').value = this.value; setMsg(''); });
+  $('concepto').addEventListener('input', syncSel);
 
-  $('clearSample').addEventListener('click', function(){ state = {sample:false, movs:[]}; save(); opened.clear(); render(); setMsg(''); $('persona').focus(); });
+  $('clearSample').addEventListener('click', function(){ state = {sample:false, movs:[], conceptos:[]}; save(); opened.clear(); render(); setMsg(''); $('persona').focus(); });
 
   function bmsg(t, err){ var m = $('backupMsg'); m.textContent = t; m.style.color = err ? 'var(--out)' : ''; }
   $('copyBtn').addEventListener('click', function(){
-    var txt = JSON.stringify({version:1, movs:state.movs});
+    var txt = JSON.stringify({version:2, movs:state.movs, conceptos:state.conceptos});
     $('backup').value = txt;
     var done = function(){ bmsg('Respaldo copiado. Pegalo en el mismo cuadro del otro dispositivo.'); };
     var fail = function(){ $('backup').focus(); $('backup').select(); bmsg('No se pudo copiar solo. El texto quedó seleccionado: copialo a mano.', true); };
@@ -416,7 +467,8 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       if(!o || !Array.isArray(o.movs)) throw new Error('formato');
       var ok = o.movs.every(function(m){ return m && typeof m.persona === 'string' && (m.tipo === 'in' || m.tipo === 'out') && Number.isInteger(m.cents) && m.cents > 0 && typeof m.fecha === 'string'; });
       if(!ok) throw new Error('datos');
-      state = {sample:false, movs:o.movs.map(function(m,i){ return {id:m.id || uid()+i, persona:clean(m.persona), tipo:m.tipo, cents:m.cents, concepto:clean(m.concepto), fecha:m.fecha, ts:m.ts || i}; })};
+      var movs = o.movs.map(function(m,i){ return {id:m.id || uid()+i, persona:clean(m.persona), tipo:m.tipo, cents:m.cents, concepto:clean(m.concepto), fecha:m.fecha, ts:m.ts || i}; });
+      state = {sample:false, movs:movs, conceptos:mergeConceptos(Array.isArray(o.conceptos) ? o.conceptos : [], movs)};
       save(); render(); bmsg('Respaldo restaurado: ' + state.movs.length + ' movimientos.');
     }catch(e){ bmsg('El texto no es un respaldo válido. Copialo de nuevo con "Copiar respaldo".', true); }
   });
@@ -425,7 +477,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     var b = $('wipeBtn');
     if(!wipeArmed){ wipeArmed = true; b.textContent = 'Tocá otra vez para borrar todo'; setTimeout(function(){ wipeArmed = false; b.textContent = 'Borrar todo'; }, 3000); return; }
     wipeArmed = false; b.textContent = 'Borrar todo';
-    state = {sample:false, movs:[]}; save(); opened.clear(); render(); bmsg('Se borraron todos los movimientos.');
+    state = {sample:false, movs:[], conceptos:[]}; save(); opened.clear(); render(); bmsg('Se borraron todos los movimientos.');
   });
 
   $('fecha').value = today(0);
