@@ -73,7 +73,7 @@ form{display:grid;gap:14px}
 .field{display:grid;gap:6px;min-width:0}
 .field>label{font-size:13px;font-weight:600;color:var(--muted)}
 select:disabled{opacity:.6}
-input[type=text],input[type=date],textarea,select{width:100%;min-width:0;font:inherit;font-size:16px;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:11px 12px}
+input[type=text],input[type=date],input[type=email],input[type=password],textarea,select{width:100%;min-width:0;font:inherit;font-size:16px;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:11px 12px}
 input:focus-visible,textarea:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #monto{font-family:var(--font-num);font-size:18px;font-weight:600}
 .row2{display:grid;grid-template-columns:1.2fr 1fr;gap:12px}
@@ -120,6 +120,11 @@ details .inner{display:grid;gap:12px;margin-top:14px}
 details p{margin:0;font-size:13px;color:var(--muted)}
 textarea{font-family:var(--font-num);font-size:13px;min-height:90px;resize:vertical}
 .actions{display:flex;flex-wrap:wrap;gap:8px}
+.auth{display:grid;gap:12px}
+.sstate{font-weight:500;font-size:13px;color:var(--muted);margin-left:6px}
+.sstate.ok{color:var(--in)}
+a.btn{display:inline-block;text-align:center;text-decoration:none}
+code{font-family:var(--font-num);font-size:12px}
 footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--muted);font-size:12px;padding-top:4px}
 @media (max-width:420px){.row2{grid-template-columns:1fr 1fr}.split{gap:14px}}
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
@@ -171,6 +176,29 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     <div class="people-h"><h2 id="ph">Por persona</h2><small id="count"></small></div>
     <div id="people" class="people"></div>
   </section>
+
+  <details class="card" id="syncCard">
+    <summary>Sincronizar entre dispositivos <span id="syncState" class="sstate"></span></summary>
+    <div class="inner">
+      <p id="syncInfo"></p>
+      <form id="ghForm" class="auth" novalidate>
+        <div class="field"><label for="ghToken">Token de GitHub</label><input type="password" id="ghToken" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ghp_…"></div>
+        <div class="actions">
+          <button class="btn" type="submit" id="ghConnect">Conectar</button>
+          <a class="btn ghost" id="ghNew" href="https://github.com/settings/tokens/new?scopes=gist&amp;description=Cuentas%20por%20Persona" target="_blank" rel="noopener">Crear token</a>
+        </div>
+      </form>
+      <div id="ghOn" class="auth" hidden>
+        <p>Conectado como <b id="ghUser"></b>. Gist <code id="ghGist"></code></p>
+        <p id="ghLast"></p>
+        <div class="actions">
+          <button class="btn" type="button" id="ghNow">Sincronizar ahora</button>
+          <button class="btn ghost" type="button" id="ghOff">Desconectar</button>
+        </div>
+      </div>
+      <p id="syncMsg" role="status"></p>
+    </div>
+  </details>
 
   <details class="card">
     <summary>Copia de seguridad y borrado</summary>
@@ -243,11 +271,12 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   // Lista de conceptos guardados: [{t:'in'|'out', n:'Sueldo'}]. Se arma sola con cada concepto nuevo.
   function mergeConceptos(base, movs){
     var seen = {}, out = [];
-    (base || []).concat((movs || []).filter(function(m){ return m.concepto; }).map(function(m){ return {t:m.tipo, n:m.concepto}; })).forEach(function(c){
+    (base || []).concat((movs || []).filter(function(m){ return m.concepto; }).map(function(m){ return {t:m.tipo, n:m.concepto, ts:m.upd || m.ts || 1}; })).forEach(function(c){
       if(!c || (c.t !== 'in' && c.t !== 'out')) return;
       var n = clean(c.n); if(!n) return;
-      var k = c.t + '|' + pkey(n); if(seen[k]) return;
-      seen[k] = 1; out.push({t:c.t, n:n});
+      var k = c.t + '|' + pkey(n), ts = c.ts || 1;
+      if(seen[k]){ if(ts > seen[k].ts) seen[k].ts = ts; return; }
+      seen[k] = {t:c.t, n:n, ts:ts}; out.push(seen[k]);
     });
     return out;
   }
@@ -260,6 +289,11 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
         var s = JSON.parse(raw);
         if(s && Array.isArray(s.movs)){
           s.conceptos = mergeConceptos(Array.isArray(s.conceptos) ? s.conceptos : [], s.movs);
+          s.deleted = (s.deleted && typeof s.deleted === 'object') ? s.deleted : {};
+          s.wipedAt = s.wipedAt || 0;
+          s.dirty = !!s.dirty;
+          delete s.outbox; delete s.owner;
+          s.movs.forEach(function(m){ m.upd = m.upd || m.ts || 1; });
           return s;
         }
       }
@@ -356,7 +390,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
           var m = r.m, isArmed = armed === m.id;
           var del = h('button',{class:'m-del',type:'button','data-armed':isArmed?'1':'0','aria-label':'Borrar movimiento ' + (m.concepto||'sin concepto'),text:isArmed?'¿Borrar?':'Borrar'});
           del.addEventListener('click', function(){
-            if(armed === m.id){ state.movs = state.movs.filter(function(x){ return x.id !== m.id; }); armed = null; save(); render(); setMsg(''); return; }
+            if(armed === m.id){ state.movs = state.movs.filter(function(x){ return x.id !== m.id; }); armed = null; (state.deleted = state.deleted || {})[m.id] = Date.now(); touched(); render(); setMsg(''); return; }
             armed = m.id; render();
             setTimeout(function(){ if(armed === m.id){ armed = null; render(); } }, 2500);
           });
@@ -429,14 +463,15 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     var existing = groups().filter(function(g){ return g.key === pkey(name); })[0];
     if(existing) name = existing.name;
     var t = tipo();
-    if(state.sample){ state = {sample:false, movs:[], conceptos:[]}; }
+    if(state.sample){ state = fresh(); }
     var cn = clean($('concepto').value), nuevoConcepto = false;
     if(cn){
       var ya = conceptoExiste(t, cn);
-      if(ya){ cn = ya.n; } else { state.conceptos.push({t:t, n:cn}); nuevoConcepto = true; }
+      if(ya){ cn = ya.n; } else { state.conceptos.push({t:t, n:cn, ts:Date.now()}); nuevoConcepto = true; }
     }
-    state.movs.push({id:uid(), persona:name, tipo:t, cents:c, concepto:cn, fecha:fecha, ts:Date.now()});
-    save();
+    var mov = {id:uid(), persona:name, tipo:t, cents:c, concepto:cn, fecha:fecha, ts:Date.now(), upd:Date.now()};
+    state.movs.push(mov);
+    touched();
     opened.add(pkey(name)); // desplegar a la persona para ver el movimiento recién cargado
     $('monto').value = ''; $('concepto').value = '';
     render();
@@ -451,7 +486,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   $('conceptoSel').addEventListener('change', function(){ $('concepto').value = this.value; setMsg(''); });
   $('concepto').addEventListener('input', syncSel);
 
-  $('clearSample').addEventListener('click', function(){ state = {sample:false, movs:[], conceptos:[]}; save(); opened.clear(); render(); setMsg(''); $('persona').focus(); });
+  $('clearSample').addEventListener('click', function(){ state = fresh(); save(); opened.clear(); render(); setMsg(''); $('persona').focus(); });
 
   function bmsg(t, err){ var m = $('backupMsg'); m.textContent = t; m.style.color = err ? 'var(--out)' : ''; }
   $('copyBtn').addEventListener('click', function(){
@@ -468,7 +503,12 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       var ok = o.movs.every(function(m){ return m && typeof m.persona === 'string' && (m.tipo === 'in' || m.tipo === 'out') && Number.isInteger(m.cents) && m.cents > 0 && typeof m.fecha === 'string'; });
       if(!ok) throw new Error('datos');
       var movs = o.movs.map(function(m,i){ return {id:m.id || uid()+i, persona:clean(m.persona), tipo:m.tipo, cents:m.cents, concepto:clean(m.concepto), fecha:m.fecha, ts:m.ts || i}; });
-      state = {sample:false, movs:movs, conceptos:mergeConceptos(Array.isArray(o.conceptos) ? o.conceptos : [], movs)};
+      state = fresh(true);
+      var T = Math.max(state.wipedAt, Date.now()) + 1;
+      movs.forEach(function(m){ m.upd = T; });
+      state.movs = movs;
+      state.conceptos = mergeConceptos((Array.isArray(o.conceptos) ? o.conceptos : []).map(function(c){ return {t:c && c.t, n:c && c.n, ts:T}; }), movs);
+      touched();
       save(); render(); bmsg('Respaldo restaurado: ' + state.movs.length + ' movimientos.');
     }catch(e){ bmsg('El texto no es un respaldo válido. Copialo de nuevo con "Copiar respaldo".', true); }
   });
@@ -477,12 +517,202 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     var b = $('wipeBtn');
     if(!wipeArmed){ wipeArmed = true; b.textContent = 'Tocá otra vez para borrar todo'; setTimeout(function(){ wipeArmed = false; b.textContent = 'Borrar todo'; }, 3000); return; }
     wipeArmed = false; b.textContent = 'Borrar todo';
-    state = {sample:false, movs:[], conceptos:[]}; save(); opened.clear(); render(); bmsg('Se borraron todos los movimientos.');
+    state = fresh(true); touched(); opened.clear(); render(); bmsg('Se borraron todos los movimientos.');
   });
+
+  // ---------- Sincronización entre dispositivos (GitHub Gist) ----------
+  // Los datos viven en un Gist secreto de tu cuenta (cuentas-por-persona.json). Cada dispositivo guarda
+  // todo localmente y, al sincronizar, une su copia con la del Gist: no se pisan los cambios de nadie.
+  // Los borrados se registran en 'deleted' y "Borrar todo" en 'wipedAt', para que no reaparezcan.
+  var GH = 'https://api.github.com', GFILE = 'cuentas-por-persona.json', CKEY = 'cuentas-sync-v1';
+  var cfg = null;
+  try{ cfg = JSON.parse(localStorage.getItem(CKEY) || 'null'); if(!cfg || !cfg.token || !cfg.gistId) cfg = null; }catch(e){ cfg = null; }
+  var S = {busy:false, again:false, timer:null, seq:0, last:0, err:''};
+  function saveCfg(){ try{ if(cfg) localStorage.setItem(CKEY, JSON.stringify(cfg)); else localStorage.removeItem(CKEY); }catch(e){} }
+
+  // "Borrar todo" conectado: vale para todos los dispositivos (wipedAt). Sin conexión: solo borra lo que este
+  // dispositivo ya conocía (marca cada movimiento como borrado), así no puede vaciar lo que hay en la nube.
+  function fresh(wipe){
+    var del = state.deleted || {}, wiped = state.wipedAt || 0, now = Date.now();
+    if(wipe){
+      if(cfg){ del = {}; wiped = now; }
+      else if(!state.sample){ del = Object.assign({}, del); (state.movs || []).forEach(function(m){ del[m.id] = now; }); }
+    }
+    return {sample:false, movs:[], conceptos:[], deleted:del, wipedAt:wiped, dirty:!!state.dirty};
+  }
+  function emptyData(){ return {movs:[], conceptos:[], deleted:{}, wipedAt:0}; }
+  function dataOf(s){ return {movs:s.movs, conceptos:s.conceptos, deleted:s.deleted || {}, wipedAt:s.wipedAt || 0}; }
+
+  function sanitize(d){
+    var o = emptyData();
+    if(!d || typeof d !== 'object') return o;
+    (Array.isArray(d.movs) ? d.movs : []).forEach(function(m){
+      if(m && typeof m.id === 'string' && typeof m.persona === 'string' && (m.tipo === 'in' || m.tipo === 'out') && Number.isInteger(m.cents) && m.cents > 0 && typeof m.fecha === 'string'){
+        o.movs.push({id:m.id, persona:clean(m.persona), tipo:m.tipo, cents:m.cents, concepto:clean(m.concepto), fecha:m.fecha, ts:m.ts || 0, upd:m.upd || m.ts || 1});
+      }
+    });
+    (Array.isArray(d.conceptos) ? d.conceptos : []).forEach(function(c){
+      if(c && (c.t === 'in' || c.t === 'out') && typeof c.n === 'string') o.conceptos.push({t:c.t, n:c.n, ts:c.ts || 1});
+    });
+    if(d.deleted && typeof d.deleted === 'object') Object.keys(d.deleted).forEach(function(k){ var v = +d.deleted[k]; if(v > 0) o.deleted[k] = v; });
+    o.wipedAt = +d.wipedAt > 0 ? +d.wipedAt : 0;
+    return o;
+  }
+
+  // Une dos copias. Un movimiento sobrevive si es más nuevo que el último "Borrar todo" y que su propio borrado.
+  function mergeStates(a, b){
+    var wiped = Math.max(a.wipedAt, b.wipedAt), del = {}, map = {};
+    [a.deleted, b.deleted].forEach(function(d){ Object.keys(d).forEach(function(k){ if(!(del[k] >= d[k])) del[k] = d[k]; }); });
+    a.movs.concat(b.movs).forEach(function(m){ var p = map[m.id]; if(!p || m.upd > p.upd) map[m.id] = m; });
+    var movs = Object.keys(map).map(function(k){ return map[k]; }).filter(function(m){ return m.upd > wiped && !(del[m.id] >= m.upd); });
+    Object.keys(del).forEach(function(k){ if(del[k] <= wiped) delete del[k]; });
+    var conceptos = mergeConceptos(a.conceptos.concat(b.conceptos), movs).filter(function(c){ return c.ts > wiped; });
+    return {movs:movs, conceptos:conceptos, deleted:del, wipedAt:wiped};
+  }
+
+  // Forma canónica para saber si hay algo nuevo que escribir en el Gist.
+  function canon(d){
+    var s = sanitize(d);
+    s.movs.sort(function(x, y){ return x.id < y.id ? -1 : 1; });
+    s.conceptos.sort(function(x, y){ var kx = x.t + x.n, ky = y.t + y.n; return kx < ky ? -1 : kx > ky ? 1 : 0; });
+    var dk = {}; Object.keys(s.deleted).sort().forEach(function(k){ dk[k] = s.deleted[k]; }); s.deleted = dk;
+    return JSON.stringify(s);
+  }
+
+  function gh(path, method, body){
+    var h = {'Accept':'application/vnd.github+json', 'Authorization':'Bearer ' + cfg.token};
+    if(body) h['Content-Type'] = 'application/json';
+    return fetch(GH + path, {method:method || 'GET', headers:h, body: body ? JSON.stringify(body) : undefined, cache:'no-store'}).then(function(r){
+      if(!r.ok){ var e = new Error('http ' + r.status); e.status = r.status; throw e; }
+      return r.json();
+    });
+  }
+  function fileBody(d){
+    var files = {};
+    files[GFILE] = {content: JSON.stringify({version:1, updatedAt:new Date().toISOString(), movs:d.movs, conceptos:d.conceptos, deleted:d.deleted, wipedAt:d.wipedAt})};
+    return files;
+  }
+  function readGist(){
+    return gh('/gists/' + cfg.gistId).then(function(g){
+      var f = g.files && g.files[GFILE];
+      if(!f) return null; // archivo borrado del Gist: se vuelve a crear al escribir
+      var txt = f.truncated && f.raw_url ? fetch(f.raw_url, {cache:'no-store'}).then(function(r){ return r.text(); }) : Promise.resolve(f.content);
+      return txt.then(function(t){ try{ return JSON.parse(t); }catch(e){ var er = new Error('corrupto'); er.status = 'corrupto'; throw er; } });
+    });
+  }
+  function writeGist(d){ return gh('/gists/' + cfg.gistId, 'PATCH', {files:fileBody(d)}); }
+
+  function syncNow(){
+    if(!cfg) return Promise.resolve();
+    if(S.busy){ S.again = true; return Promise.resolve(); }
+    if(navigator.onLine === false){ S.err = 'offline'; renderSync(); return Promise.resolve(); }
+    S.busy = true; S.err = ''; renderSync();
+    var seq0 = 0;
+    return readGist().then(function(remote){
+      var r = sanitize(remote), before = canon(r);
+      // La unión se calcula con lo que hay ahora en pantalla, para no perder lo cargado durante la espera.
+      var merged = mergeStates(sanitize(state.sample ? emptyData() : dataOf(state)), r);
+      seq0 = S.seq;
+      if(!(state.sample && !merged.movs.length && !merged.conceptos.length)){
+        state.sample = false; state.movs = merged.movs; state.conceptos = merged.conceptos; state.deleted = merged.deleted; state.wipedAt = merged.wipedAt;
+        save(); render();
+      }
+      if(canon(merged) !== before) return writeGist(merged);
+    }).then(function(){
+      if(S.seq === seq0){ state.dirty = false; save(); }
+      S.last = Date.now(); S.err = '';
+    }).catch(function(e){
+      S.err = e && e.status ? String(e.status) : 'red';
+    }).then(function(){
+      S.busy = false; renderSync();
+      if(S.again){ S.again = false; scheduleSync(300); }
+    });
+  }
+  function scheduleSync(ms){ if(!cfg) return; clearTimeout(S.timer); S.timer = setTimeout(syncNow, ms); }
+  // Se llama después de cualquier cambio local: guarda y manda al Gist unos segundos después.
+  function touched(){ state.dirty = true; S.seq++; save(); renderSync(); scheduleSync(1500); }
+
+  function ghMsg(code){
+    code = String(code);
+    if(code === '401') return 'El token no es válido o venció. Creá uno nuevo y volvé a conectar.';
+    if(code === '403') return 'GitHub rechazó el acceso. Revisá que el token tenga el permiso gist; si hubo muchos pedidos, esperá un rato.';
+    if(code === '404') return 'No se encontró el Gist, o el token no tiene el permiso gist.';
+    if(code === 'corrupto') return 'El archivo del Gist no tiene un formato válido. No se tocó para no perder datos.';
+    if(code === 'offline' || code === 'red') return 'Sin conexión con GitHub. Se reintenta solo.';
+    return 'GitHub devolvió un error (' + code + ').';
+  }
+
+  function findGist(){
+    var best = null, page = 1;
+    function next(){
+      return gh('/gists?per_page=100&page=' + page).then(function(list){
+        list.forEach(function(g){ if(g.files && g.files[GFILE] && (!best || g.updated_at > best.updated_at)) best = g; });
+        if(list.length === 100 && page < 5){ page++; return next(); }
+        return best ? best.id : null;
+      });
+    }
+    return next();
+  }
+  function createGist(){
+    var d = state.sample ? emptyData() : dataOf(state);
+    return gh('/gists', 'POST', {description:'Cuentas por Persona (datos de la app, no borrar)', public:false, files:fileBody(d)}).then(function(g){ return g.id; });
+  }
+  function connect(token){
+    token = clean(token);
+    if(!token){ smsg('Pegá el token de GitHub.', true); return; }
+    smsg('Verificando el token…');
+    cfg = {token:token};
+    var login = '';
+    gh('/user').then(function(u){ login = u.login; return findGist(); })
+      .then(function(id){ return id || createGist(); })
+      .then(function(id){ cfg = {token:token, gistId:id, login:login}; saveCfg(); $('ghToken').value = ''; smsg(''); renderSync(); return syncNow(); })
+      .catch(function(e){ cfg = null; smsg(ghMsg(e && e.status ? e.status : 'red'), true); renderSync(); });
+  }
+
+  function smsg(t, err){ var m = $('syncMsg'); m.textContent = t; m.style.color = err ? 'var(--out)' : ''; }
+
+  function renderSync(){
+    var st = $('syncState'), on = !!cfg, txt = '', cls = '', text = '';
+    if(!on){
+      txt = 'sin conectar';
+      text = 'Creá un token de GitHub con el permiso gist y pegalo en cada dispositivo. Los datos se guardan en un Gist secreto de tu cuenta (' + GFILE + ') y los cambios de todos los dispositivos se unen sin pisarse. El token queda solo en este dispositivo.';
+    } else {
+      if(S.busy){ txt = 'sincronizando…'; }
+      else if(S.err){ txt = (S.err === 'offline' || S.err === 'red') ? 'sin conexión, pendiente' : 'con error'; }
+      else if(state.dirty){ txt = 'pendiente'; }
+      else if(S.last){ txt = 'sincronizado'; cls = 'ok'; }
+      else { txt = 'conectado'; }
+      text = 'Los cambios se envían solos unos segundos después de cargarlos y al abrir la app. Si dos dispositivos cargan a la vez, se unen los movimientos de ambos.';
+      if(S.err) text += ' ' + ghMsg(S.err);
+    }
+    st.textContent = '· ' + txt;
+    st.className = 'sstate' + (cls ? ' ' + cls : '');
+    $('syncInfo').textContent = text;
+    $('ghForm').hidden = on;
+    $('ghOn').hidden = !on;
+    if(on){
+      $('ghUser').textContent = cfg.login || 'GitHub';
+      $('ghGist').textContent = '…' + String(cfg.gistId).slice(-6);
+      $('ghLast').textContent = S.last ? 'Última sincronización: ' + new Date(S.last).toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit'}) : '';
+    }
+  }
+
+  $('ghForm').addEventListener('submit', function(e){ e.preventDefault(); connect($('ghToken').value); });
+  $('ghNow').addEventListener('click', function(){ smsg(''); S.err = ''; syncNow(); });
+  $('ghOff').addEventListener('click', function(){
+    cfg = null; saveCfg(); clearTimeout(S.timer); S.err = '';
+    smsg('Desconectado. Los datos siguen en este dispositivo.'); renderSync();
+  });
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) syncNow(); });
+  window.addEventListener('online', function(){ syncNow(); });
+  window.addEventListener('offline', renderSync);
+  setInterval(function(){ if(!document.hidden) syncNow(); }, 60000);
 
   $('fecha').value = today(0);
   syncButton();
   render();
+  renderSync();
+  if(cfg) syncNow();
 })();
 // --- PWA ---
 (function(){
