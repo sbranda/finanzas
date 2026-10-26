@@ -117,6 +117,14 @@ input:focus-visible,textarea:focus-visible,button:focus-visible,summary:focus-vi
 .m-meta .num{font-size:12px}
 .m-del{grid-column:2;justify-self:end;font:inherit;font-size:12px;color:var(--muted);background:none;border:0;padding:2px 0;cursor:pointer;text-decoration:underline}
 .m-del[data-armed="1"]{color:var(--out);font-weight:600}
+.m-acts{grid-column:2;justify-self:end;display:flex;gap:14px;align-items:center}
+.m-acts .m-del{grid-column:auto}
+.m-ed{font:inherit;font-size:12px;color:var(--muted);background:none;border:0;padding:2px 0;cursor:pointer;text-decoration:underline}
+.m-form{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:4px 0}
+.m-form .wide{grid-column:1/-1}
+.m-form .msg{margin:0}
+.m-form .actions{grid-column:1/-1}
+.b-list li.editing,.mov li.editing{display:block}
 .empty{color:var(--muted);text-align:center;padding:28px 16px}
 
 details.card summary{cursor:pointer;font-weight:600;list-style-position:inside}
@@ -492,6 +500,10 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       renaming.hasFocus = !!(ae && ae.id === 'renInput');
       if(renaming.hasFocus) renaming.sel = ae.selectionStart;
     }
+    if(editing){
+      var ee = document.activeElement;
+      if(ee && ee.getAttribute && ee.getAttribute('data-ef')){ editing.focus = ee.getAttribute('data-ef'); try{ editing.sel = ee.selectionStart; }catch(x){ editing.sel = null; } }
+    }
     var gs = groups(), t = totals(gs);
     renderMes(gs);
     renderGastos(gs);
@@ -544,11 +556,12 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
             armed = m.id; render();
             setTimeout(function(){ if(armed === m.id){ armed = null; render(); } }, 2500);
           });
+          if(editing && editing.id === m.id && editing.donde === 'acc'){ ul.appendChild(h('li',{class:'editing'}, movForm(m))); return; }
           ul.appendChild(h('li',null,
             h('span',{class:'m-c',text:m.concepto || (m.tipo === 'in' ? 'Ingreso' : 'Egreso')}),
             h('span',{class:'m-a num ' + (m.tipo === 'in' ? 'in' : 'out'),text:(m.tipo === 'in' ? '+' : '−') + money(m.cents)}),
             h('span',{class:'m-meta'}, document.createTextNode(ddmmyy(m.fecha) + ' · acumulado '), h('span',{class:'num',text:money(r.acc)})),
-            del
+            h('span',{class:'m-acts'}, editBtn(m, 'acc'), del)
           ));
         });
         card.appendChild(ul);
@@ -567,6 +580,14 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     renderChips(gs);
     renderConceptos();
     renderPreview(gs, t);
+    if(editing){
+      if(!state.movs.some(function(x){ return x.id === editing.id; })) editing = null;
+      else if(editing.focus){
+        var fe = document.querySelector('[data-ef="' + editing.focus + '"]');
+        if(fe){ fe.focus(); try{ if(editing.sel != null && fe.setSelectionRange) fe.setSelectionRange(editing.sel, editing.sel); }catch(x){} }
+        editing.focus = null;
+      }
+    }
   }
 
   // Panel del mes: ingresos, egresos y saldo del mes elegido, más el acumulado hasta fin de ese mes.
@@ -681,10 +702,12 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     sum.appendChild(document.createTextNode(' · Saldo '));
     sum.appendChild(h('b',{class:'num ' + signClass(ing - egr),text:money(ing - egr)}));
     res.slice(0, bf.limite).forEach(function(m){
+      if(editing && editing.id === m.id && editing.donde === 'busca'){ ul.appendChild(h('li',{class:'editing'}, movForm(m))); return; }
       ul.appendChild(h('li',null,
         h('span',{class:'m-c',text:m.concepto || (m.tipo === 'in' ? 'Ingreso' : 'Egreso')}),
         h('span',{class:'m-a num ' + (m.tipo === 'in' ? 'in' : 'out'),text:(m.tipo === 'in' ? '+' : '−') + money(m.cents)}),
-        h('span',{class:'m-meta',text:m.persona + ' · ' + ddmmyy(m.fecha)})
+        h('span',{class:'m-meta',text:m.persona + ' · ' + ddmmyy(m.fecha)}),
+        h('span',{class:'m-acts'}, editBtn(m, 'busca'))
       ));
     });
     more.hidden = res.length <= bf.limite;
@@ -753,6 +776,69 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   $('gCuenta').addEventListener('change', function(){ cuentaSel = this.value; renderGastos(groups()); });
   $('gTabla').addEventListener('click', function(){ verTabla = !verTabla; renderGastos(groups()); });
   document.addEventListener('click', hideTip);
+
+  // Edición de un movimiento: queda marcado con 'rev' (no con 'upd'), así un borrado hecho en otro dispositivo sigue valiendo.
+  var editing = null; // {id, donde:'acc'|'busca', vals, msg, focus, sel}
+  function montoTxt(c){ var d = c % 100; return groupMiles(String(Math.floor(c / 100))) + (d ? ',' + (d < 10 ? '0' + d : d) : ''); }
+  function empezarEdicion(m, donde){
+    editing = {id:m.id, donde:donde, vals:{persona:m.persona, tipo:m.tipo, monto:montoTxt(m.cents), concepto:m.concepto || '', fecha:m.fecha}, msg:'', focus:'monto', sel:null};
+    armed = null; render();
+  }
+  function guardarEdicion(){
+    var E = editing, v = E.vals;
+    var m = state.movs.filter(function(x){ return x.id === E.id; })[0];
+    if(!m){ editing = null; render(); setMsg('Ese movimiento ya no existe (se borró en otro dispositivo).', true); return; }
+    var name = clean(v.persona), c = parseMonto(v.monto), fecha = v.fecha || m.fecha;
+    var say = function(t, f){ E.msg = t; E.focus = f; var el = document.getElementById('eMsg'); if(el) el.textContent = t; var fe = document.querySelector('[data-ef="' + f + '"]'); if(fe) fe.focus(); };
+    if(!name){ say('Falta completar el campo "' + gname() + '".', 'persona'); return; }
+    if(c === null){ say('Monto no válido. Usá números y coma para los centavos, por ejemplo 1.500,50.', 'monto'); return; }
+    var existing = groups().filter(function(g){ return g.key === pkey(name); })[0];
+    if(existing) name = existing.name;
+    var cn = clean(v.concepto);
+    if(cn){
+      var ya = conceptoExiste(v.tipo, cn);
+      if(ya){ cn = ya.n; } else { state.conceptos.push({t:v.tipo, n:cn, ts:Date.now()}); }
+    }
+    var now = Date.now();
+    m.persona = name; m.tipo = v.tipo; m.cents = c; m.concepto = cn; m.fecha = fecha;
+    m.rev = Math.max(now, (m.rev || 0) + 1, (m.upd || 0) + 1);
+    if(mesSel !== 'all') mesSel = monthKey(fecha);
+    opened.add(pkey(name));
+    editing = null; touched(); render(); setMsg('Movimiento actualizado.');
+  }
+  function movForm(m){
+    var E = editing, v = E.vals;
+    function campo(label, f, el, wide){
+      el.setAttribute('data-ef', f); el.id = 'ef-' + f;
+      el.addEventListener('input', function(){ v[f] = el.value; E.msg = ''; var mm = document.getElementById('eMsg'); if(mm) mm.textContent = ''; try{ E.sel = el.selectionStart; }catch(x){} });
+      if(el.tagName === 'SELECT') el.addEventListener('change', function(){ v[f] = el.value; });
+      return h('div',{class:'field' + (wide ? ' wide' : '')}, h('label',{for:el.id,text:label}), el);
+    }
+    var selT = h('select',null, h('option',{value:'in',text:'Ingreso'}), h('option',{value:'out',text:'Egreso'})); selT.value = v.tipo;
+    var iP = h('input',{type:'text',maxlength:'40',autocomplete:'off',list:'eDlP'}); iP.value = v.persona;
+    var iM = h('input',{type:'text',inputmode:'decimal',autocomplete:'off'}); iM.value = v.monto;
+    var iC = h('input',{type:'text',maxlength:'60',autocomplete:'off',list:'eDlC',placeholder:'Opcional'}); iC.value = v.concepto;
+    var iF = h('input',{type:'date'}); iF.value = v.fecha;
+    var dlP = h('datalist',{id:'eDlP'}); groups().forEach(function(g){ dlP.appendChild(h('option',{value:g.name})); });
+    var dlC = h('datalist',{id:'eDlC'}); var seen = {};
+    state.conceptos.forEach(function(c){ if(!seen[pkey(c.n)]){ seen[pkey(c.n)] = 1; dlC.appendChild(h('option',{value:c.n})); } });
+    var ok = h('button',{class:'btn',type:'submit',id:'eOk',text:'Guardar cambios'});
+    var cancel = h('button',{class:'btn ghost',type:'button',id:'eCancel',text:'Cancelar'});
+    cancel.addEventListener('click', function(){ editing = null; render(); });
+    var form = h('form',{class:'m-form',novalidate:'novalidate','aria-label':'Editar movimiento'},
+      campo('Tipo', 'tipo', selT), campo('Monto', 'monto', iM),
+      campo(gname(), 'persona', iP, true), campo('Concepto', 'concepto', iC, true), campo('Fecha', 'fecha', iF, true),
+      h('p',{class:'msg err',id:'eMsg',role:'alert',text:E.msg || ''}),
+      h('div',{class:'actions'}, ok, cancel), dlP, dlC);
+    form.addEventListener('submit', function(e){ e.preventDefault(); guardarEdicion(); });
+    form.addEventListener('keydown', function(e){ if(e.key === 'Escape'){ editing = null; render(); } });
+    return form;
+  }
+  function editBtn(m, donde){
+    var b = h('button',{class:'m-ed',type:'button','aria-label':'Editar movimiento ' + (m.concepto || 'sin concepto'),text:'Editar'});
+    b.addEventListener('click', function(){ empezarEdicion(m, donde); });
+    return b;
+  }
 
   function renameTools(g){
     var b = h('button',{class:'btn ghost mini',type:'button','aria-label':'Renombrar ' + g.name,text:'Renombrar'});
