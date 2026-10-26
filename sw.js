@@ -1,5 +1,5 @@
 // Service worker de Cuentas por Persona. Subí el número de VERSION cada vez que cambies archivos.
-const VERSION = 'v7';
+const VERSION = 'v8';
 const CACHE = 'cuentas-' + VERSION;
 const FONTS = 'cuentas-fuentes';
 const ARCHIVOS = [

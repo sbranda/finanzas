@@ -123,6 +123,8 @@ textarea{font-family:var(--font-num);font-size:13px;min-height:90px;resize:verti
 .auth{display:grid;gap:12px}
 .sstate{font-weight:500;font-size:13px;color:var(--muted);margin-left:6px}
 .sstate.ok{color:var(--in)}
+.ph-l{display:flex;align-items:center;gap:10px;min-width:0}
+.btn.mini{font-size:12px;padding:3px 10px}
 a.btn{display:inline-block;text-align:center;text-decoration:none}
 code{font-family:var(--font-num);font-size:12px}
 footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--muted);font-size:12px;padding-top:4px}
@@ -154,7 +156,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       <label class="o"><input type="radio" name="tipo" value="out" checked><span>Egreso</span></label>
     </div>
     <div class="field">
-      <label for="persona">Persona</label>
+      <label for="persona" id="lblPersona">Persona</label>
       <input type="text" id="persona" maxlength="40" placeholder="Escribí un nombre o tocá uno">
       <div id="chips" class="chips"></div>
     </div>
@@ -173,7 +175,18 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   </form>
 
   <section class="people" aria-labelledby="ph">
-    <div class="people-h"><h2 id="ph">Por persona</h2><small id="count"></small></div>
+    <div class="people-h">
+      <div class="ph-l"><h2 id="ph">Por persona</h2><button class="btn ghost mini" type="button" id="grpEdit" aria-label="Cambiar el nombre del grupo" aria-expanded="false">Editar</button></div>
+      <small id="count"></small>
+    </div>
+    <form id="grpForm" class="card auth" novalidate hidden>
+      <div class="row2">
+        <div class="field"><label for="grpName">Nombre (singular)</label><input type="text" id="grpName" maxlength="24" autocomplete="off" placeholder="Persona, Cuenta, Rubro…"></div>
+        <div class="field"><label for="grpPlural">Plural</label><input type="text" id="grpPlural" maxlength="28" autocomplete="off" placeholder="Personas, Cuentas…"></div>
+      </div>
+      <p id="grpMsg" class="msg err" role="alert"></p>
+      <div class="actions"><button class="btn" type="submit">Guardar</button><button class="btn ghost" type="button" id="grpCancel">Cancelar</button></div>
+    </form>
     <div id="people" class="people"></div>
   </section>
 
@@ -292,6 +305,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
           s.deleted = (s.deleted && typeof s.deleted === 'object') ? s.deleted : {};
           s.wipedAt = s.wipedAt || 0;
           s.dirty = !!s.dirty;
+          s.grupo = (s.grupo && typeof s.grupo.n === 'string' && s.grupo.n) ? s.grupo : null;
           delete s.outbox; delete s.owner;
           s.movs.forEach(function(m){ m.upd = m.upd || m.ts || 1; });
           return s;
@@ -362,11 +376,12 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     $('totIn').textContent = money(t.ing);
     $('totOut').textContent = money(t.egr);
     $('banner').hidden = !state.sample;
-    $('count').textContent = gs.length ? gs.length + (gs.length === 1 ? ' persona' : ' personas') : '';
+    renderGrupo();
+    $('count').textContent = gs.length ? gs.length + ' ' + (gs.length === 1 ? gname() : gplural()).toLowerCase() : '';
 
     var box = $('people'); box.textContent = '';
     if(!gs.length){
-      box.appendChild(h('div',{class:'card empty',text:'Todavía no hay movimientos. Cargá el primero arriba y la persona aparece acá con su subtotal.'}));
+      box.appendChild(h('div',{class:'card empty',text:'Todavía no hay movimientos. Cargá el primero arriba y aparece acá con su subtotal.'}));
     }
     gs.forEach(function(g){
       var saldo = g.ing - g.egr, open = opened.has(g.key);
@@ -441,7 +456,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     var box = $('preview'); box.textContent = '';
     var c = parseMonto($('monto').value);
     if(c === null){ box.textContent = 'Escribí un monto y ves cómo cambia el total antes de agregarlo.'; return; }
-    var name = clean($('persona').value) || 'Persona';
+    var name = clean($('persona').value) || gname();
     var g = gs.filter(function(x){ return x.key === pkey(name); })[0];
     var cur = g ? g.ing - g.egr : 0, d = tipo() === 'in' ? c : -c;
     var l1 = h('span',null, document.createTextNode(name + ': '), h('span',{class:'num',text:money(cur) + ' → ' + money(cur+d)}));
@@ -458,7 +473,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   $('f').addEventListener('submit', function(e){
     e.preventDefault();
     var name = clean($('persona').value), c = parseMonto($('monto').value), fecha = $('fecha').value || today(0);
-    if(!name){ setMsg('Elegí o escribí una persona.', true); $('persona').focus(); return; }
+    if(!name){ setMsg('Falta completar el campo "' + gname() + '".', true); $('persona').focus(); return; }
     if(c === null){ setMsg('Monto no válido. Usá números y coma para los centavos, por ejemplo 1.500,50.', true); $('monto').focus(); return; }
     var existing = groups().filter(function(g){ return g.key === pkey(name); })[0];
     if(existing) name = existing.name;
@@ -526,7 +541,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
 
   function bmsg(t, err){ var m = $('backupMsg'); m.textContent = t; m.style.color = err ? 'var(--out)' : ''; }
   $('copyBtn').addEventListener('click', function(){
-    var txt = JSON.stringify({version:2, movs:state.movs, conceptos:state.conceptos});
+    var txt = JSON.stringify({version:2, movs:state.movs, conceptos:state.conceptos, grupo:state.grupo || null});
     $('backup').value = txt;
     var done = function(){ bmsg('Respaldo copiado. Pegalo en el mismo cuadro del otro dispositivo.'); };
     var fail = function(){ $('backup').focus(); $('backup').select(); bmsg('No se pudo copiar solo. El texto quedó seleccionado: copialo a mano.', true); };
@@ -544,6 +559,8 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       movs.forEach(function(m){ m.upd = T; });
       state.movs = movs;
       state.conceptos = mergeConceptos((Array.isArray(o.conceptos) ? o.conceptos : []).map(function(c){ return {t:c && c.t, n:c && c.n, ts:T}; }), movs);
+      var gr = sanitize({grupo:o.grupo}).grupo;
+      if(gr){ gr.ts = T; state.grupo = gr; }
       touched();
       save(); render(); bmsg('Respaldo restaurado: ' + state.movs.length + ' movimientos.');
     }catch(e){ bmsg('El texto no es un respaldo válido. Copialo de nuevo con "Copiar respaldo".', true); }
@@ -554,6 +571,53 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     if(!wipeArmed){ wipeArmed = true; b.textContent = 'Tocá otra vez para borrar todo'; setTimeout(function(){ wipeArmed = false; b.textContent = 'Borrar todo'; }, 3000); return; }
     wipeArmed = false; b.textContent = 'Borrar todo';
     state = fresh(true); touched(); opened.clear(); render(); bmsg('Se borraron todos los movimientos.');
+  });
+
+  // ---------- Nombre del grupo (por defecto "Persona"); se guarda y se sincroniza ----------
+  function autoPlural(w){
+    w = clean(w);
+    if(!w || /\s/.test(w)) return w;
+    if(/[aeiouáéíóú]$/i.test(w)) return w + 's';
+    if(/s$/i.test(w)) return w;
+    if(/z$/i.test(w)) return w.slice(0, -1) + 'ces';
+    return w + 'es';
+  }
+  function gname(){ return (state.grupo && state.grupo.n) || 'Persona'; }
+  function gplural(){ return (state.grupo && state.grupo.p) || 'Personas'; }
+  function renderGrupo(){
+    var n = gname();
+    $('ph').textContent = 'Por ' + n.toLowerCase();
+    $('lblPersona').textContent = n;
+    $('grpEdit').setAttribute('aria-label', 'Cambiar el nombre del grupo (hoy: ' + n + ')');
+  }
+  var pluralTocado = false;
+  function abrirGrupo(abrir){
+    var f = $('grpForm');
+    f.hidden = !abrir;
+    $('grpEdit').setAttribute('aria-expanded', String(abrir));
+    $('grpEdit').textContent = abrir ? 'Cerrar' : 'Editar';
+    if(abrir){
+      $('grpName').value = gname(); $('grpPlural').value = gplural(); $('grpMsg').textContent = '';
+      pluralTocado = gplural().toLowerCase() !== autoPlural(gname()).toLowerCase();
+      $('grpName').focus(); $('grpName').select();
+    }
+  }
+  $('grpEdit').addEventListener('click', function(){ abrirGrupo($('grpForm').hidden); });
+  $('grpCancel').addEventListener('click', function(){ abrirGrupo(false); });
+  $('grpName').addEventListener('input', function(){ if(!pluralTocado) $('grpPlural').value = autoPlural(this.value); });
+  $('grpPlural').addEventListener('input', function(){ pluralTocado = true; });
+  $('grpForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    var n = clean($('grpName').value).slice(0, 24);
+    if(!n){ $('grpMsg').textContent = 'Escribí el nombre del grupo.'; $('grpName').focus(); return; }
+    n = n.charAt(0).toUpperCase() + n.slice(1);
+    var p = clean($('grpPlural').value).slice(0, 28) || autoPlural(n);
+    p = p.charAt(0).toUpperCase() + p.slice(1);
+    if(n !== gname() || p !== gplural()){
+      state.grupo = {n:n, p:p, ts:Date.now()};
+      touched(); render();
+    }
+    abrirGrupo(false);
   });
 
   // ---------- Sincronización entre dispositivos (GitHub Gist) ----------
@@ -574,10 +638,10 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       if(cfg){ del = {}; wiped = now; }
       else if(!state.sample){ del = Object.assign({}, del); (state.movs || []).forEach(function(m){ del[m.id] = now; }); }
     }
-    return {sample:false, movs:[], conceptos:[], deleted:del, wipedAt:wiped, dirty:!!state.dirty};
+    return {sample:false, movs:[], conceptos:[], deleted:del, wipedAt:wiped, dirty:!!state.dirty, grupo:state.grupo || null};
   }
-  function emptyData(){ return {movs:[], conceptos:[], deleted:{}, wipedAt:0}; }
-  function dataOf(s){ return {movs:s.movs, conceptos:s.conceptos, deleted:s.deleted || {}, wipedAt:s.wipedAt || 0}; }
+  function emptyData(){ return {movs:[], conceptos:[], deleted:{}, wipedAt:0, grupo:null}; }
+  function dataOf(s){ return {movs:s.movs, conceptos:s.conceptos, deleted:s.deleted || {}, wipedAt:s.wipedAt || 0, grupo:s.grupo || null}; }
 
   function sanitize(d){
     var o = emptyData();
@@ -592,6 +656,10 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     });
     if(d.deleted && typeof d.deleted === 'object') Object.keys(d.deleted).forEach(function(k){ var v = +d.deleted[k]; if(v > 0) o.deleted[k] = v; });
     o.wipedAt = +d.wipedAt > 0 ? +d.wipedAt : 0;
+    if(d.grupo && typeof d.grupo.n === 'string' && clean(d.grupo.n)){
+      var gn = clean(d.grupo.n).slice(0, 24), gp = clean(d.grupo.p).slice(0, 28);
+      o.grupo = {n:gn, p:gp || autoPlural(gn), ts:+d.grupo.ts > 0 ? +d.grupo.ts : 1};
+    }
     return o;
   }
 
@@ -603,7 +671,8 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     var movs = Object.keys(map).map(function(k){ return map[k]; }).filter(function(m){ return m.upd > wiped && !(del[m.id] >= m.upd); });
     Object.keys(del).forEach(function(k){ if(del[k] <= wiped) delete del[k]; });
     var conceptos = mergeConceptos(a.conceptos.concat(b.conceptos), movs).filter(function(c){ return c.ts > wiped; });
-    return {movs:movs, conceptos:conceptos, deleted:del, wipedAt:wiped};
+    var grupo = a.grupo && (!b.grupo || a.grupo.ts >= b.grupo.ts) ? a.grupo : b.grupo;
+    return {movs:movs, conceptos:conceptos, deleted:del, wipedAt:wiped, grupo:grupo};
   }
 
   // Forma canónica para saber si hay algo nuevo que escribir en el Gist.
@@ -625,7 +694,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   }
   function fileBody(d){
     var files = {};
-    files[GFILE] = {content: JSON.stringify({version:1, updatedAt:new Date().toISOString(), movs:d.movs, conceptos:d.conceptos, deleted:d.deleted, wipedAt:d.wipedAt})};
+    files[GFILE] = {content: JSON.stringify({version:1, updatedAt:new Date().toISOString(), movs:d.movs, conceptos:d.conceptos, deleted:d.deleted, wipedAt:d.wipedAt, grupo:d.grupo || null})};
     return files;
   }
   function readGist(){
@@ -647,10 +716,10 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     return readGist().then(function(remote){
       var r = sanitize(remote), before = canon(r);
       // La unión se calcula con lo que hay ahora en pantalla, para no perder lo cargado durante la espera.
-      var merged = mergeStates(sanitize(state.sample ? emptyData() : dataOf(state)), r);
+      var merged = mergeStates(sanitize(state.sample ? Object.assign(emptyData(), {grupo:state.grupo || null}) : dataOf(state)), r);
       seq0 = S.seq;
       if(!(state.sample && !merged.movs.length && !merged.conceptos.length)){
-        state.sample = false; state.movs = merged.movs; state.conceptos = merged.conceptos; state.deleted = merged.deleted; state.wipedAt = merged.wipedAt;
+        state.sample = false; state.movs = merged.movs; state.conceptos = merged.conceptos; state.deleted = merged.deleted; state.wipedAt = merged.wipedAt; state.grupo = merged.grupo;
         save(); render();
       }
       if(canon(merged) !== before) return writeGist(merged);
