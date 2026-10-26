@@ -479,6 +479,42 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     $('monto').focus();
   });
 
+  // Formato del monto mientras se escribe: puntos de miles automáticos y coma para los centavos.
+  // En el teclado numérico, el punto o la coma al final del número funcionan como coma decimal.
+  function groupMiles(i){ return i.replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+  function fmtMonto(raw, pegado){
+    var s = raw.replace(/[^\d.,]/g, ''), ip, dp = null;
+    if(pegado){
+      var c = parseMonto(s);
+      if(c !== null){ var d = c % 100; return groupMiles(String(Math.floor(c / 100))) + (d ? ',' + (d < 10 ? '0' + d : d) : ''); }
+    }
+    var ci = s.indexOf(',');
+    if(ci > -1){ dp = s.slice(ci + 1).replace(/\D/g, '').slice(0, 2); ip = s.slice(0, ci); }
+    else if(s.length > 1 && s.charAt(s.length - 1) === '.'){ dp = ''; ip = s.slice(0, -1); }
+    else { ip = s; }
+    ip = ip.replace(/\D/g, '').replace(/^0+(?=\d)/, '').slice(0, 12);
+    if(!ip && dp === null) return '';
+    return groupMiles(ip || '0') + (dp !== null ? ',' + dp : '');
+  }
+  var lastMonto = '';
+  $('monto').addEventListener('input', function(e){
+    var el = this, raw = el.value, pos = el.selectionStart == null ? raw.length : el.selectionStart;
+    // Si se borró un punto de miles, se borra en su lugar el dígito anterior (si no, el punto reaparece y no se puede borrar).
+    if(e.inputType === 'deleteContentBackward' && lastMonto.length === raw.length + 1 && lastMonto.charAt(pos) === '.' && pos > 0){
+      raw = raw.slice(0, pos - 1) + raw.slice(pos); pos--;
+    }
+    var out = fmtMonto(raw, e.inputType === 'insertFromPaste'), np = out.length;
+    if(pos < raw.length){
+      // Cursor en el medio: se lo deja después del mismo dígito o coma de antes.
+      var k = (raw.slice(0, pos).match(/[\d,]/g) || []).length, n = 0;
+      np = 0;
+      if(k > 0){ for(var i = 0; i < out.length; i++){ if(/[\d,]/.test(out.charAt(i))) n++; if(n === k){ np = i + 1; break; } } if(n < k) np = out.length; }
+    }
+    if(out !== el.value) el.value = out;
+    try{ el.setSelectionRange(np, np); }catch(x){}
+    lastMonto = out;
+  });
+
   ['persona','monto'].forEach(function(id){ $(id).addEventListener('input', function(){ setMsg(''); renderAll(); }); });
   Array.prototype.forEach.call(document.querySelectorAll('input[name=tipo]'), function(r){
     r.addEventListener('change', function(){ syncButton(); renderConceptos(); renderAll(); });
