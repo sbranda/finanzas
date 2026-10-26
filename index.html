@@ -77,7 +77,7 @@ form{display:grid;gap:14px}
 .field{display:grid;gap:6px;min-width:0}
 .field>label{font-size:13px;font-weight:600;color:var(--muted)}
 select:disabled{opacity:.6}
-input[type=text],input[type=date],input[type=email],input[type=password],textarea,select{width:100%;min-width:0;font:inherit;font-size:16px;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:11px 12px}
+input[type=text],input[type=date],input[type=month],input[type=email],input[type=password],textarea,select{width:100%;min-width:0;font:inherit;font-size:16px;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:11px 12px}
 input:focus-visible,textarea:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #monto{font-family:var(--font-num);font-size:18px;font-weight:600}
 .row2{display:grid;grid-template-columns:1.2fr 1fr;gap:12px}
@@ -163,6 +163,24 @@ textarea{font-family:var(--font-num);font-size:13px;min-height:90px;resize:verti
 .g-table .r{text-align:right;white-space:nowrap}
 .g-tip{position:absolute;z-index:6;pointer-events:none;background:var(--ink);color:var(--surface);padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.35;max-width:min(260px,80%);box-shadow:0 2px 10px rgba(0,0,0,.25)}
 .g-tip strong{display:block;font-size:14px}
+.pend{border-color:var(--accent);display:grid;gap:10px}
+.pend[hidden],.rec-form[hidden]{display:none}
+.pend h2{margin:0;font-size:16px}
+.pend-sub{margin:0;font-size:13px;color:var(--muted)}
+.pend-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,120px);gap:6px 10px;padding:10px 0;border-top:1px solid var(--line);align-items:end}
+.pend-info{min-width:0;display:grid;gap:2px}
+.pend-info b{overflow-wrap:anywhere}
+.pend-info span{font-size:12px;color:var(--muted)}
+.pend-row .actions{grid-column:1/-1}
+.rec{display:grid;gap:12px}
+.rec-list{list-style:none;margin:0;padding:0}
+.rec-list li{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:10px 0;border-top:1px solid var(--line)}
+.rec-list .m-c{font-weight:600;overflow-wrap:anywhere}
+.rec-list .m-meta{grid-column:1}
+.rec-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;border-top:1px solid var(--line);padding-top:12px}
+.rec-form .wide{grid-column:1/-1}
+.rec-form .msg{margin:0}
+.rec-hint{margin:0;font-size:12px;color:var(--muted)}
 .busca{display:grid;gap:10px}
 .b-top{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}
 .b-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
@@ -212,6 +230,13 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     <span><b>Datos de ejemplo.</b> Borralos para empezar con los tuyos.</span>
     <button class="btn ghost" type="button" id="clearSample">Empezar de cero</button>
   </div>
+
+  <section class="pend card" id="pend" aria-labelledby="pendH" hidden>
+    <h2 id="pendH">Para confirmar</h2>
+    <p class="pend-sub" id="pendSub" aria-live="polite"></p>
+    <div id="pendList"></div>
+    <button class="btn ghost" type="button" id="pendAll" hidden>Confirmar todos</button>
+  </section>
 
   <form id="f" class="card" autocomplete="off" novalidate>
     <div class="seg" role="radiogroup" aria-label="Tipo de movimiento">
@@ -283,6 +308,23 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     <ul id="bList" class="b-list" hidden></ul>
     <button class="btn ghost b-more" type="button" id="bMore" hidden></button>
   </section>
+
+  <details class="card rec" id="recDet">
+    <summary id="recSum">Movimientos recurrentes</summary>
+    <p class="rec-hint">Alquiler, sueldo, expensas, internet… Cada mes, cuando llega el día, la app te avisa arriba para confirmarlos con un toque (podés cambiar el monto antes de confirmar).</p>
+    <ul class="rec-list" id="recList"></ul>
+    <form class="rec-form" id="recForm" novalidate>
+      <div class="field"><label for="rTipo">Tipo</label><select id="rTipo"><option value="out">Egreso</option><option value="in">Ingreso</option></select></div>
+      <div class="field"><label for="rMonto">Monto</label><input type="text" id="rMonto" inputmode="decimal" autocomplete="off" placeholder="0,00"></div>
+      <div class="field wide"><label for="rPers" id="rPersL">Persona</label><input type="text" id="rPers" maxlength="40" autocomplete="off" list="rDlP"><datalist id="rDlP"></datalist></div>
+      <div class="field wide"><label for="rConc">Concepto</label><input type="text" id="rConc" maxlength="60" autocomplete="off" list="rDlC" placeholder="Alquiler, Sueldo, Internet…"><datalist id="rDlC"></datalist></div>
+      <div class="field"><label for="rDia">Día del mes</label><input type="text" id="rDia" inputmode="numeric" maxlength="2" autocomplete="off" placeholder="1 a 31"></div>
+      <div class="field"><label for="rDesde">Desde</label><input type="month" id="rDesde"></div>
+      <p class="rec-hint wide" style="grid-column:1/-1">Si el día no existe en un mes (por ejemplo el 31), se usa el último día del mes.</p>
+      <p class="msg err wide" id="rMsg" role="alert" style="grid-column:1/-1"></p>
+      <div class="actions wide" style="grid-column:1/-1"><button class="btn" type="submit" id="rOk">Agregar recurrente</button><button class="btn ghost" type="button" id="rCancel" hidden>Cancelar</button></div>
+    </form>
+  </details>
 
   <section class="people" aria-labelledby="ph">
     <div class="people-h">
@@ -416,6 +458,8 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
           s.wipedAt = s.wipedAt || 0;
           s.dirty = !!s.dirty;
           s.grupo = (s.grupo && typeof s.grupo.n === 'string' && s.grupo.n) ? s.grupo : null;
+          s.recur = Array.isArray(s.recur) ? s.recur : [];
+          s.omit = (s.omit && typeof s.omit === 'object') ? s.omit : {};
           delete s.outbox; delete s.owner;
           s.movs.forEach(function(m){ m.upd = m.upd || m.ts || 1; });
           return s;
@@ -508,6 +552,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     renderMes(gs);
     renderGastos(gs);
     renderBusca(gs);
+    renderRec(gs);
     animateTotal(t.saldo);
     $('totIn').textContent = money(t.ing);
     $('totOut').textContent = money(t.egr);
@@ -777,6 +822,161 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   $('gTabla').addEventListener('click', function(){ verTabla = !verTabla; renderGastos(groups()); });
   document.addEventListener('click', hideTip);
 
+  // ---------- Movimientos recurrentes ----------
+  // Una plantilla (recur) avisa cada mes cuando llega su día; al confirmar se crea el movimiento con un id fijo
+  // ('r<plantilla>_<mes>'), así dos dispositivos que confirmen lo mismo no lo duplican al sincronizar.
+  function recs(){ return state.recur || []; }
+  function nextMonth(k){ var y = +k.slice(0,4), m = +k.slice(5,7) + 1; if(m > 12){ m = 1; y++; } return y + '-' + String(m).padStart(2,'0'); }
+  function addMonths(k, n){ var y = +k.slice(0,4), m = +k.slice(5,7) - 1 + n; y += Math.floor(m / 12); m = ((m % 12) + 12) % 12; return y + '-' + String(m + 1).padStart(2,'0'); }
+  function fechaDe(k, dia){ var y = +k.slice(0,4), m = +k.slice(5,7), dm = new Date(y, m, 0).getDate(); return k + '-' + String(Math.min(dia, dm)).padStart(2,'0'); }
+  function movIdRec(r, k){ return 'r' + r.id + '_' + k; }
+  var pendVals = {}, pendFocus = null, recEdit = null, armedRec = null;
+  function pendientes(){
+    if(state.sample) return [];
+    var hoy = today(0), cur = hoy.slice(0,7), lim = addMonths(cur, -5), out = [], ids = {}, om = state.omit || {}, del = state.deleted || {};
+    state.movs.forEach(function(m){ ids[m.id] = 1; });
+    recs().forEach(function(r){
+      for(var k = r.desde < lim ? lim : r.desde; k <= cur; k = nextMonth(k)){
+        var f = fechaDe(k, r.dia), id = movIdRec(r, k);
+        if(f > hoy || ids[id] || del[id] || om[r.id + '|' + k]) continue;
+        out.push({r:r, k:k, fecha:f, id:id, key:r.id + '|' + k});
+      }
+    });
+    return out.sort(function(a,b){ return a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : a.r.ts - b.r.ts; });
+  }
+  function confirmarPend(it, cents){
+    var r = it.r, now = Date.now();
+    var cn = r.concepto;
+    if(cn){ var ya = conceptoExiste(r.tipo, cn); if(ya) cn = ya.n; else state.conceptos.push({t:r.tipo, n:cn, ts:now}); }
+    state.movs.push({id:it.id, persona:r.persona, tipo:r.tipo, cents:cents, concepto:cn, fecha:it.fecha, ts:now, upd:now});
+    if(cents !== r.cents){ r.cents = cents; r.rev = Math.max(now, (r.rev || 0) + 1, (r.upd || 0) + 1); }
+    opened.add(pkey(r.persona));
+    delete pendVals[it.key];
+  }
+  function renderPend(){
+    var box = $('pend'), list = $('pendList'), items = pendientes();
+    var ae = document.activeElement;
+    if(ae && ae.getAttribute && ae.getAttribute('data-pk')){ pendFocus = {k:ae.getAttribute('data-pk'), sel:(function(){ try{ return ae.selectionStart; }catch(x){ return null; } })()}; }
+    box.hidden = !items.length; list.textContent = '';
+    if(!items.length){ pendFocus = null; return; }
+    $('pendH').textContent = 'Para confirmar (' + items.length + ')';
+    $('pendSub').textContent = 'Ya llegó el día de ' + (items.length === 1 ? 'este movimiento recurrente' : 'estos movimientos recurrentes') + '. Revisá el monto y confirmá, o omití el mes.';
+    items.forEach(function(it){
+      var r = it.r, v = (it.key in pendVals) ? pendVals[it.key] : montoTxt(r.cents);
+      var inp = h('input',{type:'text',inputmode:'decimal',autocomplete:'off','data-pk':it.key,'aria-label':'Monto de ' + (r.concepto || 'movimiento recurrente') + ' de ' + cap(mesLabel(it.k))});
+      inp.value = v;
+      inp.addEventListener('input', function(){ pendVals[it.key] = inp.value; });
+      var ok = h('button',{class:'btn',type:'button',text:'Confirmar ' + (r.tipo === 'in' ? 'ingreso' : 'egreso')});
+      var om = h('button',{class:'btn ghost',type:'button','aria-label':'Omitir ' + (r.concepto || 'movimiento') + ' de ' + cap(mesLabel(it.k)),text:'Omitir este mes'});
+      ok.addEventListener('click', function(){
+        var c = parseMonto(inp.value);
+        if(c === null){ inp.focus(); setMsg('Monto no válido. Usá números y coma para los centavos, por ejemplo 1.500,50.', true); return; }
+        confirmarPend(it, c);
+        if(mesSel !== 'all') mesSel = monthKey(it.fecha);
+        touched(); render(); setMsg((r.tipo === 'in' ? 'Ingreso' : 'Egreso') + ' de ' + money(c) + ' confirmado en ' + r.persona + '.');
+      });
+      om.addEventListener('click', function(){
+        (state.omit = state.omit || {})[it.key] = Date.now(); delete pendVals[it.key];
+        touched(); render(); setMsg('Omitiste ' + (r.concepto || 'el movimiento') + ' de ' + mesLabel(it.k) + '.');
+      });
+      list.appendChild(h('div',{class:'pend-row'},
+        h('div',{class:'pend-info'}, h('b',{text:(r.concepto || (r.tipo === 'in' ? 'Ingreso' : 'Egreso')) + ' · ' + cap(mesLabel(it.k))}), h('span',{text:r.persona + ' · ' + (r.tipo === 'in' ? 'ingreso' : 'egreso') + ' del ' + ddmmyy(it.fecha)})),
+        inp,
+        h('div',{class:'actions'}, ok, om)));
+    });
+    $('pendAll').hidden = items.length < 2;
+    $('pendAll').textContent = 'Confirmar todos (' + items.length + ')';
+    $('pendAll').onclick = function(){
+      var cs = items.map(function(it){ var c = parseMonto((it.key in pendVals) ? pendVals[it.key] : montoTxt(it.r.cents)); return c; });
+      if(cs.some(function(c){ return c === null; })){ setMsg('Hay un monto no válido. Revisalo antes de confirmar todos.', true); return; }
+      items.forEach(function(it, i){ confirmarPend(it, cs[i]); });
+      touched(); render(); setMsg(items.length + ' movimientos confirmados.');
+    };
+    if(pendFocus){
+      var fe = list.querySelector('[data-pk="' + pendFocus.k.replace(/"/g,'') + '"]');
+      if(fe){ fe.focus(); try{ if(pendFocus.sel != null) fe.setSelectionRange(pendFocus.sel, pendFocus.sel); }catch(x){} }
+      pendFocus = null;
+    }
+  }
+  function renderRec(gs){
+    renderPend();
+    var list = $('recList'); list.textContent = '';
+    var rs = recs().slice().sort(function(a,b){ return a.dia - b.dia || a.ts - b.ts; });
+    $('recSum').textContent = 'Movimientos recurrentes' + (rs.length ? ' (' + rs.length + ')' : '');
+    $('rPersL').textContent = gname();
+    var dl = $('rDlP'); dl.textContent = ''; gs.forEach(function(g){ dl.appendChild(h('option',{value:g.name})); });
+    var dc = $('rDlC'); dc.textContent = ''; var seen = {};
+    state.conceptos.forEach(function(c){ if(!seen[pkey(c.n)]){ seen[pkey(c.n)] = 1; dc.appendChild(h('option',{value:c.n})); } });
+    if(!rs.length) list.appendChild(h('li',{class:'m-meta',text:'Todavía no hay recurrentes. Agregá el primero abajo.'}));
+    rs.forEach(function(r){
+      var isArmed = armedRec === r.id;
+      var ed = h('button',{class:'m-ed',type:'button','aria-label':'Editar recurrente ' + (r.concepto || 'sin concepto'),text:'Editar'});
+      ed.addEventListener('click', function(){ empezarRec(r); });
+      var del = h('button',{class:'m-del',type:'button','data-armed':isArmed ? '1' : '0','aria-label':'Borrar recurrente ' + (r.concepto || 'sin concepto'),text:isArmed ? '¿Borrar?' : 'Borrar'});
+      del.addEventListener('click', function(){
+        if(armedRec === r.id){
+          state.recur = state.recur.filter(function(x){ return x.id !== r.id; }); armedRec = null;
+          (state.deleted = state.deleted || {})[r.id] = Date.now();
+          if(recEdit === r.id) cancelarRec();
+          touched(); render(); return;
+        }
+        armedRec = r.id; render();
+        setTimeout(function(){ if(armedRec === r.id){ armedRec = null; render(); } }, 2500);
+      });
+      list.appendChild(h('li',null,
+        h('span',{class:'m-c',text:r.concepto || (r.tipo === 'in' ? 'Ingreso' : 'Egreso')}),
+        h('span',{class:'m-a num ' + (r.tipo === 'in' ? 'in' : 'out'),text:(r.tipo === 'in' ? '+' : '−') + money(r.cents)}),
+        h('span',{class:'m-meta',text:r.persona + ' · todos los meses el día ' + r.dia + ' · desde ' + mesLabel(r.desde)}),
+        h('span',{class:'m-acts'}, ed, del)));
+    });
+  }
+  function empezarRec(r){
+    recEdit = r.id;
+    $('rTipo').value = r.tipo; $('rMonto').value = montoTxt(r.cents); $('rPers').value = r.persona; $('rConc').value = r.concepto || '';
+    $('rDia').value = String(r.dia); $('rDesde').value = r.desde; $('rMsg').textContent = '';
+    $('rOk').textContent = 'Guardar cambios'; $('rCancel').hidden = false;
+    $('recDet').open = true; $('rMonto').focus();
+  }
+  function cancelarRec(){
+    recEdit = null; $('rMonto').value = ''; $('rPers').value = ''; $('rConc').value = ''; $('rDia').value = ''; $('rTipo').value = 'out';
+    $('rDesde').value = today(0).slice(0,7); $('rMsg').textContent = ''; $('rOk').textContent = 'Agregar recurrente'; $('rCancel').hidden = true;
+  }
+  $('rCancel').addEventListener('click', cancelarRec);
+  $('rDesde').value = today(0).slice(0,7);
+  $('recForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    var say = function(t, id){ $('rMsg').textContent = t; if(id) $(id).focus(); };
+    var name = clean($('rPers').value), c = parseMonto($('rMonto').value), dia = parseInt($('rDia').value, 10), desde = $('rDesde').value || today(0).slice(0,7), t = $('rTipo').value;
+    if(!name) return say('Falta completar el campo "' + gname() + '".', 'rPers');
+    if(c === null) return say('Monto no válido. Usá números y coma para los centavos, por ejemplo 1.500,50.', 'rMonto');
+    if(!(dia >= 1 && dia <= 31) || !/^\d+$/.test($('rDia').value.trim())) return say('El día tiene que ser un número del 1 al 31.', 'rDia');
+    if(!/^\d{4}-\d{2}$/.test(desde)) return say('Elegí el mes de inicio.', 'rDesde');
+    var existing = groups().filter(function(g){ return g.key === pkey(name); })[0];
+    if(existing) name = existing.name;
+    var cn = clean($('rConc').value), now = Date.now(), aviso = '';
+    if(cn){ var ya = conceptoExiste(t, cn); if(ya) cn = ya.n; else state.conceptos.push({t:t, n:cn, ts:now}); }
+    if(state.sample) state = fresh();
+    if(recEdit){
+      var r = recs().filter(function(x){ return x.id === recEdit; })[0];
+      if(r){
+        r.persona = name; r.tipo = t; r.cents = c; r.concepto = cn; r.dia = dia; r.desde = desde;
+        r.rev = Math.max(now, (r.rev || 0) + 1, (r.upd || 0) + 1);
+      }
+      aviso = 'Recurrente actualizado.';
+    } else {
+      var cur = today(0).slice(0,7);
+      // Si este mes ya se cargó a mano un movimiento igual, se empieza a avisar desde el mes siguiente.
+      if(desde === cur && state.movs.some(function(m){ return monthKey(m.fecha) === cur && m.tipo === t && pkey(m.persona) === pkey(name) && pkey(m.concepto || '') === pkey(cn); })){
+        desde = nextMonth(cur); aviso = ' Este mes ya lo tenías cargado: empieza a avisar desde ' + mesLabel(desde) + '.';
+      }
+      (state.recur = state.recur || []).push({id:uid(), persona:name, tipo:t, cents:c, concepto:cn, dia:dia, desde:desde, ts:now, upd:now, rev:0});
+      aviso = 'Recurrente agregado.' + aviso;
+    }
+    cancelarRec(); touched(); render(); $('rMsg').textContent = ''; setMsg(aviso);
+  });
+  var diaVisto = today(0);
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden && today(0) !== diaVisto){ diaVisto = today(0); render(); } });
+
   // Edición de un movimiento: queda marcado con 'rev' (no con 'upd'), así un borrado hecho en otro dispositivo sigue valiendo.
   var editing = null; // {id, donde:'acc'|'busca', vals, msg, focus, sel}
   function montoTxt(c){ var d = c % 100; return groupMiles(String(Math.floor(c / 100))) + (d ? ',' + (d < 10 ? '0' + d : d) : ''); }
@@ -875,6 +1075,9 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     var name = ex ? ex.name : nn, now = Date.now();
     state.movs.forEach(function(m){
       if(pkey(m.persona) === g.key){ m.persona = name; m.rev = Math.max(now, (m.rev || 0) + 1, (m.upd || 0) + 1); }
+    });
+    (state.recur || []).forEach(function(r){
+      if(pkey(r.persona) === g.key){ r.persona = name; r.rev = Math.max(now, (r.rev || 0) + 1, (r.upd || 0) + 1); }
     });
     if(opened.has(g.key)){ opened.delete(g.key); opened.add(pkey(name)); }
     if(cuentaSel === g.key) cuentaSel = pkey(name);
@@ -999,7 +1202,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
 
   function bmsg(t, err){ var m = $('backupMsg'); m.textContent = t; m.style.color = err ? 'var(--out)' : ''; }
   $('copyBtn').addEventListener('click', function(){
-    var txt = JSON.stringify({version:2, movs:state.movs, conceptos:state.conceptos, grupo:state.grupo || null});
+    var txt = JSON.stringify({version:2, movs:state.movs, conceptos:state.conceptos, recur:state.recur || [], grupo:state.grupo || null});
     $('backup').value = txt;
     var done = function(){ bmsg('Respaldo copiado. Pegalo en el mismo cuadro del otro dispositivo.'); };
     var fail = function(){ $('backup').focus(); $('backup').select(); bmsg('No se pudo copiar solo. El texto quedó seleccionado: copialo a mano.', true); };
@@ -1017,6 +1220,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       movs.forEach(function(m){ m.upd = T; });
       state.movs = movs;
       state.conceptos = mergeConceptos((Array.isArray(o.conceptos) ? o.conceptos : []).map(function(c){ return {t:c && c.t, n:c && c.n, ts:T}; }), movs);
+      state.recur = sanitize({recur:o.recur}).recur.map(function(r){ r.upd = T; r.rev = 0; return r; });
       var gr = sanitize({grupo:o.grupo}).grupo;
       if(gr){ gr.ts = T; state.grupo = gr; }
       touched();
@@ -1094,12 +1298,12 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     var del = state.deleted || {}, wiped = state.wipedAt || 0, now = Date.now();
     if(wipe){
       if(cfg){ del = {}; wiped = now; }
-      else if(!state.sample){ del = Object.assign({}, del); (state.movs || []).forEach(function(m){ del[m.id] = now; }); }
+      else if(!state.sample){ del = Object.assign({}, del); (state.movs || []).forEach(function(m){ del[m.id] = now; }); (state.recur || []).forEach(function(r){ del[r.id] = now; }); }
     }
-    return {sample:false, movs:[], conceptos:[], deleted:del, wipedAt:wiped, dirty:!!state.dirty, grupo:state.grupo || null};
+    return {sample:false, movs:[], conceptos:[], recur:[], omit:{}, deleted:del, wipedAt:wiped, dirty:!!state.dirty, grupo:state.grupo || null};
   }
-  function emptyData(){ return {movs:[], conceptos:[], deleted:{}, wipedAt:0, grupo:null}; }
-  function dataOf(s){ return {movs:s.movs, conceptos:s.conceptos, deleted:s.deleted || {}, wipedAt:s.wipedAt || 0, grupo:s.grupo || null}; }
+  function emptyData(){ return {movs:[], conceptos:[], recur:[], omit:{}, deleted:{}, wipedAt:0, grupo:null}; }
+  function dataOf(s){ return {movs:s.movs, conceptos:s.conceptos, recur:s.recur || [], omit:s.omit || {}, deleted:s.deleted || {}, wipedAt:s.wipedAt || 0, grupo:s.grupo || null}; }
 
   function sanitize(d){
     var o = emptyData();
@@ -1112,6 +1316,12 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     (Array.isArray(d.conceptos) ? d.conceptos : []).forEach(function(c){
       if(c && (c.t === 'in' || c.t === 'out') && typeof c.n === 'string') o.conceptos.push({t:c.t, n:c.n, ts:c.ts || 1});
     });
+    (Array.isArray(d.recur) ? d.recur : []).forEach(function(r){
+      if(r && typeof r.id === 'string' && typeof r.persona === 'string' && (r.tipo === 'in' || r.tipo === 'out') && Number.isInteger(r.cents) && r.cents > 0 && Number.isInteger(r.dia) && r.dia >= 1 && r.dia <= 31 && /^\d{4}-\d{2}$/.test(r.desde || '')){
+        o.recur.push({id:r.id, persona:clean(r.persona), tipo:r.tipo, cents:r.cents, concepto:clean(r.concepto), dia:r.dia, desde:r.desde, ts:r.ts || 0, upd:r.upd || r.ts || 1, rev:+r.rev > 0 ? +r.rev : 0});
+      }
+    });
+    if(d.omit && typeof d.omit === 'object') Object.keys(d.omit).forEach(function(k){ var v = +d.omit[k]; if(v > 0) o.omit[k] = v; });
     if(d.deleted && typeof d.deleted === 'object') Object.keys(d.deleted).forEach(function(k){ var v = +d.deleted[k]; if(v > 0) o.deleted[k] = v; });
     o.wipedAt = +d.wipedAt > 0 ? +d.wipedAt : 0;
     if(d.grupo && typeof d.grupo.n === 'string' && clean(d.grupo.n)){
@@ -1131,7 +1341,12 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     Object.keys(del).forEach(function(k){ if(del[k] <= wiped) delete del[k]; });
     var conceptos = mergeConceptos(a.conceptos.concat(b.conceptos), movs).filter(function(c){ return c.ts > wiped; });
     var grupo = a.grupo && (!b.grupo || a.grupo.ts >= b.grupo.ts) ? a.grupo : b.grupo;
-    return {movs:movs, conceptos:conceptos, deleted:del, wipedAt:wiped, grupo:grupo};
+    var rmap = {};
+    (a.recur || []).concat(b.recur || []).forEach(function(r){ var p = rmap[r.id]; if(!p || rv(r) > rv(p)) rmap[r.id] = r; });
+    var recur = Object.keys(rmap).map(function(k){ return rmap[k]; }).filter(function(r){ return r.upd > wiped && !(del[r.id] >= r.upd); });
+    var omit = {};
+    [a.omit || {}, b.omit || {}].forEach(function(o){ Object.keys(o).forEach(function(k){ if(o[k] > wiped && !(omit[k] >= o[k])) omit[k] = o[k]; }); });
+    return {movs:movs, conceptos:conceptos, recur:recur, omit:omit, deleted:del, wipedAt:wiped, grupo:grupo};
   }
 
   // Forma canónica para saber si hay algo nuevo que escribir en el Gist.
@@ -1139,6 +1354,8 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     var s = sanitize(d);
     s.movs.sort(function(x, y){ return x.id < y.id ? -1 : 1; });
     s.conceptos.sort(function(x, y){ var kx = x.t + x.n, ky = y.t + y.n; return kx < ky ? -1 : kx > ky ? 1 : 0; });
+    s.recur.sort(function(x, y){ return x.id < y.id ? -1 : 1; });
+    var ok = {}; Object.keys(s.omit).sort().forEach(function(k){ ok[k] = s.omit[k]; }); s.omit = ok;
     var dk = {}; Object.keys(s.deleted).sort().forEach(function(k){ dk[k] = s.deleted[k]; }); s.deleted = dk;
     return JSON.stringify(s);
   }
@@ -1153,7 +1370,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   }
   function fileBody(d){
     var files = {};
-    files[GFILE] = {content: JSON.stringify({version:1, updatedAt:new Date().toISOString(), movs:d.movs, conceptos:d.conceptos, deleted:d.deleted, wipedAt:d.wipedAt, grupo:d.grupo || null})};
+    files[GFILE] = {content: JSON.stringify({version:1, updatedAt:new Date().toISOString(), movs:d.movs, conceptos:d.conceptos, recur:d.recur || [], omit:d.omit || {}, deleted:d.deleted, wipedAt:d.wipedAt, grupo:d.grupo || null})};
     return files;
   }
   function readGist(){
@@ -1179,7 +1396,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       seq0 = S.seq;
       if(!(state.sample && !merged.movs.length && !merged.conceptos.length)){
         var changed = state.sample || canon(merged) !== canon(dataOf(state));
-        state.sample = false; state.movs = merged.movs; state.conceptos = merged.conceptos; state.deleted = merged.deleted; state.wipedAt = merged.wipedAt; state.grupo = merged.grupo;
+        state.sample = false; state.movs = merged.movs; state.conceptos = merged.conceptos; state.deleted = merged.deleted; state.wipedAt = merged.wipedAt; state.grupo = merged.grupo; state.recur = merged.recur; state.omit = merged.omit;
         save(); if(changed) render();
       }
       if(canon(merged) !== before) return writeGist(merged);
