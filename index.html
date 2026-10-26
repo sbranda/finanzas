@@ -126,6 +126,18 @@ textarea{font-family:var(--font-num);font-size:13px;min-height:90px;resize:verti
 .p-tools{display:flex;align-items:center;gap:8px;padding:8px 16px;border-top:1px solid var(--line)}
 .p-ren{display:grid;gap:8px;padding:10px 16px;border-top:1px solid var(--line)}
 .p-ren label{font-size:13px;font-weight:600;color:var(--muted)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.mes-nav{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center}
+.mes-nav select{font-weight:600;text-transform:capitalize}
+.mes-nav select option{text-transform:capitalize}
+.btn.nav{font-size:22px;line-height:1;padding:8px 16px;min-height:44px}
+.btn:disabled{opacity:.4;cursor:default}
+.mes-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:14px 12px;margin-top:14px}
+.mes-grid>div{min-width:0}
+.mes-grid .num{display:block;font-size:17px;font-weight:600;overflow-wrap:anywhere}
+.mes-note{margin:12px 0 0;font-size:13px;color:var(--muted)}
+.p-acum{color:var(--muted)}
+.mov li.m-empty{display:block;color:var(--muted);font-size:13px}
 .ph-l{display:flex;align-items:center;gap:10px;min-width:0}
 .btn.mini{font-size:12px;padding:3px 10px}
 a.btn{display:inline-block;text-align:center;text-decoration:none}
@@ -170,12 +182,27 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     <div class="field">
       <label for="conceptoSel">Concepto</label>
       <select id="conceptoSel"></select>
-      <input type="text" id="concepto" maxlength="60" aria-label="Concepto nuevo" placeholder="O escribí uno nuevo: queda guardado en la lista">
+      <input type="text" id="concepto" maxlength="60" aria-label="Concepto nuevo" placeholder="O escribí uno nuevo (se guarda)">
     </div>
     <p id="preview" class="preview" aria-live="polite"></p>
     <p id="msg" class="msg" role="status"></p>
     <button class="btn" type="submit" id="addBtn">Agregar ingreso</button>
   </form>
+
+  <section class="mes card" aria-labelledby="mesH">
+    <div class="mes-nav">
+      <button class="btn ghost nav" type="button" id="mesPrev" aria-label="Mes anterior">‹</button>
+      <div class="field"><label class="sr" for="mesSel" id="mesH">Mes</label><select id="mesSel"></select></div>
+      <button class="btn ghost nav" type="button" id="mesNext" aria-label="Mes siguiente">›</button>
+    </div>
+    <div class="mes-grid">
+      <div><span class="lbl">Ingresos</span><span id="mIn" class="num in"></span></div>
+      <div><span class="lbl">Egresos</span><span id="mOut" class="num out"></span></div>
+      <div><span class="lbl" id="mSalL">Saldo del mes</span><span id="mSal" class="num"></span></div>
+      <div id="mAcumBox"><span class="lbl">Acumulado</span><span id="mAcum" class="num"></span></div>
+    </div>
+    <p id="mNote" class="mes-note"></p>
+  </section>
 
   <section class="people" aria-labelledby="ph">
     <div class="people-h">
@@ -325,6 +352,19 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
   state = load();
 
+  var mesSel = today(0).slice(0, 7); // mes que se está viendo ('YYYY-MM') o 'all'
+  var MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  function monthKey(f){ return /^\d{4}-\d{2}/.test(f) ? f.slice(0, 7) : '0000-00'; }
+  function mesLabel(k){ return k === '0000-00' ? 'Sin fecha' : (MESES[+k.slice(5, 7) - 1] || 'mes') + ' ' + k.slice(0, 4); }
+  function enMes(m){ return mesSel === 'all' || monthKey(m.fecha) === mesSel; }
+  function hastaMes(m){ return mesSel === 'all' || monthKey(m.fecha) <= mesSel; }
+  function mesesLista(){
+    var set = {};
+    state.movs.forEach(function(m){ set[monthKey(m.fecha)] = 1; });
+    set[today(0).slice(0, 7)] = 1;
+    if(mesSel !== 'all') set[mesSel] = 1;
+    return Object.keys(set).sort();
+  }
   var renaming = null; // {key, value, msg, confirm, focus, hasFocus, sel}: grupo que se está renombrando
   var opened = new Set(); // personas con el cuadro desplegado; por defecto todas plegadas
   var armed = null;
@@ -381,6 +421,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       if(renaming.hasFocus) renaming.sel = ae.selectionStart;
     }
     var gs = groups(), t = totals(gs);
+    renderMes(gs);
     animateTotal(t.saldo);
     $('totIn').textContent = money(t.ing);
     $('totOut').textContent = money(t.egr);
@@ -393,17 +434,25 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       box.appendChild(h('div',{class:'card empty',text:'Todavía no hay movimientos. Cargá el primero arriba y aparece acá con su subtotal.'}));
     }
     gs.forEach(function(g){
-      var saldo = g.ing - g.egr, open = opened.has(g.key);
+      var open = opened.has(g.key), mi = 0, me = 0, mc = 0, ac = 0;
+      g.list.forEach(function(r){
+        var m = r.m;
+        if(enMes(m)){ if(m.tipo === 'in') mi += m.cents; else me += m.cents; mc++; }
+        if(hastaMes(m)) ac += m.tipo === 'in' ? m.cents : -m.cents;
+      });
+      var saldo = mi - me;
+      var sub = h('span',{class:'p-sub'},
+        h('span',{text:'Ingresos '}, h('b',{class:'num in',text:money(mi)})),
+        h('span',{text:'Egresos '}, h('b',{class:'num out',text:money(me)})),
+        h('span',{text:mc + (mc === 1 ? ' movimiento' : ' movimientos')})
+      );
+      if(mesSel !== 'all') sub.appendChild(h('span',{class:'p-acum',text:'Acumulado '}, h('b',{class:'num ' + signClass(ac),text:money(ac)})));
       var head = h('button',{class:'p-head',type:'button','aria-expanded':String(open)},
         h('span',{class:'p-name'}, h('span',{class:'chev','aria-hidden':'true'}), h('span',{text:g.name})),
         h('span',{class:'p-saldo num ' + signClass(saldo),text:money(saldo)}),
-        h('span',{class:'p-sub'},
-          h('span',{text:'Ingresos '}, h('b',{class:'num in',text:money(g.ing)})),
-          h('span',{text:'Egresos '}, h('b',{class:'num out',text:money(g.egr)})),
-          h('span',{text:g.list.length + (g.list.length === 1 ? ' movimiento' : ' movimientos')})
-        )
+        sub
       );
-      var tot = g.ing + g.egr, pct = tot ? Math.round(g.ing*100/tot) : 0;
+      var tot = mi + me, pct = tot ? Math.round(mi*100/tot) : 0;
       var bar = h('span',{class:'bar','aria-hidden':'true'}, h('i',{class:'bi',style:'width:'+pct+'%'}), h('i',{class:'bo',style:'width:'+(tot?100-pct:0)+'%'}));
       head.appendChild(bar);
       head.addEventListener('click', function(){ if(opened.has(g.key)) opened.delete(g.key); else opened.add(g.key); render(); });
@@ -411,7 +460,9 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       if(open){
         card.appendChild(renaming && renaming.key === g.key ? renameForm(g) : renameTools(g));
         var ul = h('ul',{class:'mov'});
-        g.list.slice().reverse().forEach(function(r){
+        var visibles = g.list.filter(function(r){ return enMes(r.m); }).reverse();
+        if(!visibles.length) ul.appendChild(h('li',{class:'m-empty',text:'Sin movimientos en este mes.'}));
+        visibles.forEach(function(r){
           var m = r.m, isArmed = armed === m.id;
           var del = h('button',{class:'m-del',type:'button','data-armed':isArmed?'1':'0','aria-label':'Borrar movimiento ' + (m.concepto||'sin concepto'),text:isArmed?'¿Borrar?':'Borrar'});
           del.addEventListener('click', function(){
@@ -443,6 +494,38 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     renderConceptos();
     renderPreview(gs, t);
   }
+
+  // Panel del mes: ingresos, egresos y saldo del mes elegido, más el acumulado hasta fin de ese mes.
+  function renderMes(gs){
+    var ls = mesesLista(), sel = $('mesSel'), ing = 0, egr = 0, n = 0, acum = 0, prev = 0;
+    gs.forEach(function(g){ g.list.forEach(function(r){
+      var m = r.m, k = monthKey(m.fecha), sg = m.tipo === 'in' ? m.cents : -m.cents;
+      if(enMes(m)){ if(m.tipo === 'in') ing += m.cents; else egr += m.cents; n++; }
+      if(hastaMes(m)) acum += sg;
+      if(mesSel !== 'all' && k < mesSel) prev += sg;
+    }); });
+    sel.textContent = '';
+    sel.appendChild(h('option',{value:'all',text:'Todos los meses'}));
+    ls.slice().reverse().forEach(function(k){ sel.appendChild(h('option',{value:k,text:mesLabel(k)})); });
+    sel.value = mesSel;
+    var i = ls.indexOf(mesSel);
+    $('mesPrev').disabled = mesSel === 'all' || i <= 0;
+    $('mesNext').disabled = mesSel === 'all' || i < 0 || i >= ls.length - 1;
+    var sal = ing - egr;
+    $('mIn').textContent = money(ing);
+    $('mOut').textContent = money(egr);
+    $('mSal').textContent = money(sal); $('mSal').className = 'num ' + signClass(sal);
+    $('mAcum').textContent = money(acum); $('mAcum').className = 'num ' + signClass(acum);
+    $('mSalL').textContent = mesSel === 'all' ? 'Saldo' : 'Saldo del mes';
+    $('mAcumBox').hidden = mesSel === 'all';
+    var cnt = n + (n === 1 ? ' movimiento' : ' movimientos');
+    $('mNote').textContent = mesSel === 'all'
+      ? cnt + ' en total.'
+      : cnt + ' en ' + mesLabel(mesSel) + '. Lo que venía de meses anteriores: ' + money(prev) + '.';
+  }
+  $('mesSel').addEventListener('change', function(){ mesSel = this.value; render(); });
+  $('mesPrev').addEventListener('click', function(){ var ls = mesesLista(), i = ls.indexOf(mesSel); if(i > 0){ mesSel = ls[i - 1]; render(); } });
+  $('mesNext').addEventListener('click', function(){ var ls = mesesLista(), i = ls.indexOf(mesSel); if(i > -1 && i < ls.length - 1){ mesSel = ls[i + 1]; render(); } });
 
   function renameTools(g){
     var b = h('button',{class:'btn ghost mini',type:'button','aria-label':'Renombrar ' + g.name,text:'Renombrar'});
@@ -545,6 +628,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     }
     var mov = {id:uid(), persona:name, tipo:t, cents:c, concepto:cn, fecha:fecha, ts:Date.now(), upd:Date.now()};
     state.movs.push(mov);
+    if(mesSel !== 'all') mesSel = monthKey(fecha); // se pasa al mes del movimiento para verlo
     touched();
     opened.add(pkey(name)); // desplegar a la persona para ver el movimiento recién cargado
     $('monto').value = ''; $('concepto').value = '';
