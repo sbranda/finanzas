@@ -123,6 +123,9 @@ textarea{font-family:var(--font-num);font-size:13px;min-height:90px;resize:verti
 .auth{display:grid;gap:12px}
 .sstate{font-weight:500;font-size:13px;color:var(--muted);margin-left:6px}
 .sstate.ok{color:var(--in)}
+.p-tools{display:flex;align-items:center;gap:8px;padding:8px 16px;border-top:1px solid var(--line)}
+.p-ren{display:grid;gap:8px;padding:10px 16px;border-top:1px solid var(--line)}
+.p-ren label{font-size:13px;font-weight:600;color:var(--muted)}
 .ph-l{display:flex;align-items:center;gap:10px;min-width:0}
 .btn.mini{font-size:12px;padding:3px 10px}
 a.btn{display:inline-block;text-align:center;text-decoration:none}
@@ -322,6 +325,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
   state = load();
 
+  var renaming = null; // {key, value, msg, confirm, focus, hasFocus, sel}: grupo que se está renombrando
   var opened = new Set(); // personas con el cuadro desplegado; por defecto todas plegadas
   var armed = null;
   var shownTotal = null;
@@ -371,6 +375,11 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   }
 
   function render(){
+    if(renaming){
+      var ae = document.activeElement;
+      renaming.hasFocus = !!(ae && ae.id === 'renInput');
+      if(renaming.hasFocus) renaming.sel = ae.selectionStart;
+    }
     var gs = groups(), t = totals(gs);
     animateTotal(t.saldo);
     $('totIn').textContent = money(t.ing);
@@ -400,6 +409,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       head.addEventListener('click', function(){ if(opened.has(g.key)) opened.delete(g.key); else opened.add(g.key); render(); });
       var card = h('article',{class:'card person'}, head);
       if(open){
+        card.appendChild(renaming && renaming.key === g.key ? renameForm(g) : renameTools(g));
         var ul = h('ul',{class:'mov'});
         g.list.slice().reverse().forEach(function(r){
           var m = r.m, isArmed = armed === m.id;
@@ -420,9 +430,58 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       }
       box.appendChild(card);
     });
+    if(renaming && !gs.some(function(x){ return x.key === renaming.key; })) renaming = null;
+    if(renaming && (renaming.focus || renaming.hasFocus)){
+      var ri = $('renInput');
+      if(ri){
+        var sp = (renaming.focus || renaming.sel == null) ? ri.value.length : renaming.sel;
+        ri.focus(); try{ ri.setSelectionRange(sp, sp); }catch(x){}
+      }
+      renaming.focus = false;
+    }
     renderChips(gs);
     renderConceptos();
     renderPreview(gs, t);
+  }
+
+  function renameTools(g){
+    var b = h('button',{class:'btn ghost mini',type:'button','aria-label':'Renombrar ' + g.name,text:'Renombrar'});
+    b.addEventListener('click', function(){ renaming = {key:g.key, value:g.name, msg:'', confirm:false, focus:true, hasFocus:false, sel:null}; render(); });
+    return h('div',{class:'p-tools'}, b);
+  }
+  function renameForm(g){
+    var R = renaming;
+    var inp = h('input',{type:'text',id:'renInput',maxlength:'40',autocomplete:'off','aria-label':'Nuevo nombre de ' + g.name});
+    inp.value = R.value;
+    var msg = h('p',{class:'msg err',id:'renMsg',role:'alert',text:R.msg || ''});
+    var ok = h('button',{class:'btn',type:'submit',id:'renOk',text:R.confirm ? 'Unir' : 'Guardar'});
+    var cancel = h('button',{class:'btn ghost',type:'button',id:'renCancel',text:'Cancelar'});
+    var form = h('form',{class:'p-ren',novalidate:'novalidate'},
+      h('label',{for:'renInput',text:'Nuevo nombre'}), inp, msg, h('div',{class:'actions'}, ok, cancel));
+    inp.addEventListener('input', function(){
+      R.value = inp.value; R.sel = inp.selectionStart; R.msg = ''; R.confirm = false;
+      msg.textContent = ''; ok.textContent = 'Guardar';
+    });
+    cancel.addEventListener('click', function(){ renaming = null; render(); });
+    form.addEventListener('submit', function(e){ e.preventDefault(); doRename(g); });
+    return form;
+  }
+  // Renombrar cambia el nombre en todos los movimientos del grupo. Si el nombre ya existe, pide confirmar y los une.
+  // Se marca con 'rev' (no con 'upd'), así un borrado o un "Borrar todo" hecho en otro dispositivo sigue valiendo.
+  function doRename(g){
+    var R = renaming, nn = clean(R.value).slice(0, 40);
+    var say = function(t, confirmar){ R.msg = t; R.confirm = !!confirmar; $('renMsg').textContent = t; $('renOk').textContent = confirmar ? 'Unir' : 'Guardar'; };
+    if(!nn){ say('Escribí un nombre.'); $('renInput').focus(); return; }
+    var nk = pkey(nn);
+    if(nn === g.name){ renaming = null; render(); return; }
+    var ex = nk !== g.key ? groups().filter(function(x){ return x.key === nk; })[0] : null;
+    if(ex && !R.confirm){ say('Ya existe "' + ex.name + '". Si seguís, se unen los dos grupos.', true); return; }
+    var name = ex ? ex.name : nn, now = Date.now();
+    state.movs.forEach(function(m){
+      if(pkey(m.persona) === g.key){ m.persona = name; m.rev = Math.max(now, (m.rev || 0) + 1, (m.upd || 0) + 1); }
+    });
+    if(opened.has(g.key)){ opened.delete(g.key); opened.add(pkey(name)); }
+    renaming = null; touched(); render();
   }
 
   function renderConceptos(){
@@ -648,7 +707,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     if(!d || typeof d !== 'object') return o;
     (Array.isArray(d.movs) ? d.movs : []).forEach(function(m){
       if(m && typeof m.id === 'string' && typeof m.persona === 'string' && (m.tipo === 'in' || m.tipo === 'out') && Number.isInteger(m.cents) && m.cents > 0 && typeof m.fecha === 'string'){
-        o.movs.push({id:m.id, persona:clean(m.persona), tipo:m.tipo, cents:m.cents, concepto:clean(m.concepto), fecha:m.fecha, ts:m.ts || 0, upd:m.upd || m.ts || 1});
+        o.movs.push({id:m.id, persona:clean(m.persona), tipo:m.tipo, cents:m.cents, concepto:clean(m.concepto), fecha:m.fecha, ts:m.ts || 0, upd:m.upd || m.ts || 1, rev:+m.rev > 0 ? +m.rev : 0});
       }
     });
     (Array.isArray(d.conceptos) ? d.conceptos : []).forEach(function(c){
@@ -664,10 +723,11 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   }
 
   // Une dos copias. Un movimiento sobrevive si es más nuevo que el último "Borrar todo" y que su propio borrado.
+  function rv(m){ return Math.max(m.rev || 0, m.upd); }
   function mergeStates(a, b){
     var wiped = Math.max(a.wipedAt, b.wipedAt), del = {}, map = {};
     [a.deleted, b.deleted].forEach(function(d){ Object.keys(d).forEach(function(k){ if(!(del[k] >= d[k])) del[k] = d[k]; }); });
-    a.movs.concat(b.movs).forEach(function(m){ var p = map[m.id]; if(!p || m.upd > p.upd) map[m.id] = m; });
+    a.movs.concat(b.movs).forEach(function(m){ var p = map[m.id]; if(!p || rv(m) > rv(p)) map[m.id] = m; });
     var movs = Object.keys(map).map(function(k){ return map[k]; }).filter(function(m){ return m.upd > wiped && !(del[m.id] >= m.upd); });
     Object.keys(del).forEach(function(k){ if(del[k] <= wiped) delete del[k]; });
     var conceptos = mergeConceptos(a.conceptos.concat(b.conceptos), movs).filter(function(c){ return c.ts > wiped; });
@@ -719,8 +779,9 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       var merged = mergeStates(sanitize(state.sample ? Object.assign(emptyData(), {grupo:state.grupo || null}) : dataOf(state)), r);
       seq0 = S.seq;
       if(!(state.sample && !merged.movs.length && !merged.conceptos.length)){
+        var changed = state.sample || canon(merged) !== canon(dataOf(state));
         state.sample = false; state.movs = merged.movs; state.conceptos = merged.conceptos; state.deleted = merged.deleted; state.wipedAt = merged.wipedAt; state.grupo = merged.grupo;
-        save(); render();
+        save(); if(changed) render();
       }
       if(canon(merged) !== before) return writeGist(merged);
     }).then(function(){
