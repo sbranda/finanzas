@@ -340,7 +340,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     <form class="rec-form" id="presForm" novalidate>
       <div class="field"><label for="pTipo">Presupuesto por</label><select id="pTipo"><option value="concepto">Concepto</option><option value="persona" id="pTipoP">Persona</option></select></div>
       <div class="field"><label for="pMonto">Límite por mes</label><input type="text" id="pMonto" inputmode="decimal" autocomplete="off" placeholder="0,00"></div>
-      <div class="field wide"><label for="pNombre" id="pNombreL">Concepto</label><input type="text" id="pNombre" maxlength="60" autocomplete="off" list="pDl" placeholder="Super, Salidas, Transporte…"><datalist id="pDl"></datalist></div>
+      <div class="field wide"><label for="pNombre" id="pNombreL">Concepto</label><select id="pNombre"></select></div>
       <p class="msg err wide" id="pMsg" role="alert" style="grid-column:1/-1"></p>
       <div class="actions wide" style="grid-column:1/-1"><button class="btn" type="submit" id="pOk">Guardar presupuesto</button><button class="btn ghost" type="button" id="pCancel" hidden>Cancelar</button></div>
     </form>
@@ -937,27 +937,34 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     });
     presDl(gs);
   }
-  function presDl(gs){
-    var t = $('pTipo').value, dl = $('pDl'); dl.textContent = '';
+  function presDl(gs, forzar){
+    var t = $('pTipo').value, sel = $('pNombre'), prev = forzar != null ? forzar : sel.value, names = [], seen = {};
     $('pNombreL').textContent = t === 'persona' ? gname() : 'Concepto';
-    $('pNombre').placeholder = t === 'persona' ? '' : 'Super, Salidas, Transporte…';
-    if(t === 'persona') gs.forEach(function(g){ dl.appendChild(h('option',{value:g.name})); });
-    else { var seen = {}; state.conceptos.filter(function(c){ return c.t === 'out'; }).forEach(function(c){ if(!seen[pkey(c.n)]){ seen[pkey(c.n)] = 1; dl.appendChild(h('option',{value:c.n})); } }); }
+    if(t === 'persona') gs.forEach(function(g){ names.push(g.name); });
+    else state.conceptos.filter(function(c){ return c.t === 'out'; }).forEach(function(c){ if(!seen[pkey(c.n)]){ seen[pkey(c.n)] = 1; names.push(c.n); } });
+    names.sort(function(x, y){ return x.localeCompare(y, 'es'); });
+    if(prev && !names.some(function(n){ return pkey(n) === pkey(prev); })) names.push(prev); // p. ej. un presupuesto cuya cuenta ya no tiene movimientos
+    sel.textContent = '';
+    sel.appendChild(h('option',{value:'',text:names.length ? (t === 'persona' ? 'Elegir ' + gname().toLowerCase() + '…' : 'Elegir concepto…') : (t === 'persona' ? 'Todavía no hay cuentas' : 'Todavía no hay conceptos de egreso')}));
+    names.forEach(function(n){ sel.appendChild(h('option',{value:n,text:n})); });
+    sel.disabled = !names.length;
+    var m = names.filter(function(n){ return prev && pkey(n) === pkey(prev); })[0];
+    sel.value = m || '';
   }
-  $('pTipo').addEventListener('change', function(){ presDl(groups()); });
+  $('pTipo').addEventListener('change', function(){ presDl(groups(), ''); });
   function empezarPres(b){
-    presEdit = b.id; $('pTipo').value = b.tipo; presDl(groups()); $('pNombre').value = b.nombre; $('pMonto').value = montoTxt(b.cents);
+    presEdit = b.id; $('pTipo').value = b.tipo; presDl(groups(), b.nombre); $('pMonto').value = montoTxt(b.cents);
     $('pMsg').textContent = ''; $('pOk').textContent = 'Guardar cambios'; $('pCancel').hidden = false; $('presDet').open = true; $('pMonto').focus();
   }
   function cancelarPres(){
-    presEdit = null; $('pNombre').value = ''; $('pMonto').value = ''; $('pMsg').textContent = ''; $('pOk').textContent = 'Guardar presupuesto'; $('pCancel').hidden = true;
+    presEdit = null; presDl(groups(), ''); $('pMonto').value = ''; $('pMsg').textContent = ''; $('pOk').textContent = 'Guardar presupuesto'; $('pCancel').hidden = true;
   }
   $('pCancel').addEventListener('click', cancelarPres);
   $('presForm').addEventListener('submit', function(e){
     e.preventDefault();
     var say = function(t, id){ $('pMsg').textContent = t; if(id) $(id).focus(); };
     var t = $('pTipo').value, nm = clean($('pNombre').value).slice(0, 60), c = parseMonto($('pMonto').value);
-    if(!nm) return say(t === 'persona' ? 'Falta completar el campo "' + gname() + '".' : 'Falta completar el concepto.', 'pNombre');
+    if(!nm) return say(t === 'persona' ? 'Elegí ' + gname().toLowerCase() + ' de la lista.' : 'Elegí un concepto de la lista. Si no está, cargá antes un egreso con ese concepto.', 'pNombre');
     if(c === null) return say('Monto no válido. Usá números y coma para los centavos, por ejemplo 1.500,50.', 'pMonto');
     if(t === 'persona'){ var ex = groups().filter(function(g){ return g.key === pkey(nm); })[0]; if(ex) nm = ex.name; }
     else { var ya = state.conceptos.filter(function(x){ return x.t === 'out' && pkey(x.n) === pkey(nm); })[0]; if(ya) nm = ya.n; }
