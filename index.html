@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script>try{if(localStorage.getItem("cuentas-lock-v1"))document.documentElement.className+=" locked"}catch(e){}</script>
 <title>Cuentas por Persona</title>
 <meta name="description" content="Ingresos y egresos agrupados por persona, con saldo total en vivo.">
 <meta name="theme-color" content="#EDF0F4" media="(prefers-color-scheme: light)">
@@ -257,12 +258,44 @@ textarea{font-family:var(--font-num);font-size:13px;min-height:90px;resize:verti
 .btn.mini{font-size:12px;padding:3px 10px}
 a.btn{display:inline-block;text-align:center;text-decoration:none}
 code{font-family:var(--font-num);font-size:12px}
+#lock{display:none;position:fixed;inset:0;z-index:1000;background:var(--bg);align-items:center;justify-content:center;padding:24px;overflow:auto}
+html.locked #lock{display:flex}
+html.locked body>header,html.locked body>main{display:none}
+html.locked body{overflow:hidden}
+.lock-box{width:100%;max-width:360px;display:grid;gap:14px;text-align:center}
+.lock-box h1{margin:0;font-family:var(--font-display);font-size:24px}
+.lock-box p{margin:0;color:var(--muted)}
+.lock-box form{display:grid;gap:10px}
+#lockPin{text-align:center;font-family:var(--font-num);font-size:28px;letter-spacing:.35em;padding:12px}
+#lockRec{display:grid;gap:10px;text-align:left;border-top:1px solid var(--line);padding-top:12px}
+#lockRec[hidden]{display:none}
+.sec{display:grid;gap:12px}
+.sec form{display:grid;gap:10px}
+.sec .actions{display:flex;flex-wrap:wrap;gap:8px}
+.sec .hint{margin:0;font-size:12px;color:var(--muted)}
+.sec-st{margin:0;font-size:14px}
 footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--muted);font-size:12px;padding-top:4px}
 @media (max-width:420px){.row2{grid-template-columns:1fr 1fr}.split{gap:14px}}
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
 <body>
+<div id="lock" role="dialog" aria-modal="true" aria-labelledby="lockT">
+  <div class="lock-box">
+    <h1 id="lockT">Cuentas por Persona</h1>
+    <p id="lockSub">Ingresá tu PIN para abrir la app.</p>
+    <form id="lockForm" novalidate>
+      <label class="sr" for="lockPin">PIN</label>
+      <input id="lockPin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" aria-describedby="lockMsg">
+      <p id="lockMsg" class="msg err" role="alert"></p>
+      <button class="btn" type="submit" id="lockOk">Entrar</button>
+    </form>
+    <button class="btn ghost" type="button" id="lockBio" hidden>Usar huella</button>
+    <button class="btn ghost" type="button" id="lockForgot">Olvidé el PIN</button>
+    <div id="lockRec" hidden></div>
+  </div>
+</div>
+
 
 <header class="top">
   <div class="wrap">
@@ -488,7 +521,13 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     </div>
   </details>
 
+  <details class="card" id="lockDet">
+    <summary id="lockSum">Seguridad: PIN y huella</summary>
+    <div class="inner sec" id="secBox"></div>
+  </details>
+
   <footer>
+    <button class="btn ghost" type="button" id="lockNowBtn" hidden>Bloquear ahora</button>
     <button class="btn ghost" type="button" id="installBtn" hidden>Instalar la app</button>
     <div>Desarrollado por @sebranda</div>
   </footer>
@@ -2117,6 +2156,229 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   window.addEventListener('online', function(){ syncNow(); });
   window.addEventListener('offline', renderSync);
   setInterval(function(){ if(!document.hidden) syncNow(); }, 60000);
+
+  // ---------- Bloqueo con PIN y huella ----------
+  // Pantalla de bloqueo para que otra persona que use el dispositivo no vea tus cuentas. Es local de cada dispositivo
+  // (no se sincroniza) y no cifra los datos: protege de la mirada casual, no de alguien con acceso técnico al navegador.
+  var LKEY = 'cuentas-lock-v1', FKEY = 'cuentas-lock-fail', lockCfg = null, lockMode = '', secMsg = '', unlockedAt = 0, hiddenAt = 0, waitT = null;
+  var cryptoOk = !!(window.crypto && crypto.subtle && window.TextEncoder);
+  function b64(u8){ var s = ''; for(var i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]); return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+  function unb64(t){ t = t.replace(/-/g,'+').replace(/_/g,'/'); while(t.length % 4) t += '='; var s = atob(t), u = new Uint8Array(s.length); for(var i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
+  function lockLoad(){
+    try{
+      var raw = localStorage.getItem(LKEY); if(!raw) return null;
+      var o = JSON.parse(raw);
+      if(o && typeof o.salt === 'string' && typeof o.hash === 'string' && o.it > 0 && o.len >= 4 && o.len <= 8) return o;
+      localStorage.removeItem(LKEY); // configuración dañada: no se puede verificar, se quita
+    }catch(e){ try{ localStorage.removeItem(LKEY); }catch(x){} }
+    return null;
+  }
+  function lockSave(){ try{ if(lockCfg) localStorage.setItem(LKEY, JSON.stringify(lockCfg)); else localStorage.removeItem(LKEY); }catch(e){} }
+  function hashPin(pin, saltB64, it){
+    return crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits'])
+      .then(function(k){ return crypto.subtle.deriveBits({name:'PBKDF2', salt:unb64(saltB64), iterations:it, hash:'SHA-256'}, k, 256); })
+      .then(function(b){ return b64(new Uint8Array(b)); });
+  }
+  function checkPin(pin){ return hashPin(pin, lockCfg.salt, lockCfg.it).then(function(hh){ return hh === lockCfg.hash; }); }
+  function failGet(){ try{ return JSON.parse(localStorage.getItem(FKEY) || '{}') || {}; }catch(e){ return {}; } }
+  function failSet(f){ try{ if(f) localStorage.setItem(FKEY, JSON.stringify(f)); else localStorage.removeItem(FKEY); }catch(e){} }
+  function esperaSeg(){ return Math.max(0, Math.ceil(((failGet().until || 0) - Date.now()) / 1000)); }
+  function pinFalla(){
+    var f = failGet(); f.n = (f.n || 0) + 1;
+    if(f.n >= 5) f.until = Date.now() + Math.min(300, 30 * Math.pow(2, f.n - 5)) * 1000;
+    failSet(f); return f;
+  }
+  function randBytes(n){ var u = new Uint8Array(n); crypto.getRandomValues(u); return u; }
+
+  function lockedNow(){ return document.documentElement.classList.contains('locked'); }
+  function lockShow(){
+    document.documentElement.classList.add('locked');
+    $('lockPin').value = ''; $('lockPin').maxLength = lockCfg ? lockCfg.len : 8; $('lockRec').hidden = true; $('lockMsg').textContent = '';
+    $('lockBio').hidden = !(lockCfg && lockCfg.bio && bioUi);
+    lockWaitUi();
+    setTimeout(function(){ try{ $('lockPin').focus(); }catch(e){} }, 30);
+  }
+  function lockNow(){ if(!lockCfg) return; lockShow(); }
+  function unlock(){
+    document.documentElement.classList.remove('locked');
+    failSet(null); unlockedAt = Date.now(); $('lockPin').value = ''; $('lockMsg').textContent = '';
+    render(); renderSec();
+  }
+  function lockWaitUi(){
+    clearTimeout(waitT);
+    var w = esperaSeg(), inp = $('lockPin'), ok = $('lockOk');
+    if(w > 0){
+      inp.disabled = true; ok.disabled = true; $('lockMsg').textContent = 'Demasiados intentos. Probá de nuevo en ' + w + ' s.';
+      waitT = setTimeout(lockWaitUi, 1000);
+    } else {
+      var was = inp.disabled; inp.disabled = false; ok.disabled = false;
+      if(was){ $('lockMsg').textContent = ''; try{ inp.focus(); }catch(e){} }
+    }
+  }
+  function tryPin(){
+    if(!lockCfg || esperaSeg() > 0){ lockWaitUi(); return Promise.resolve(); }
+    var pin = $('lockPin').value;
+    if(!/^\d+$/.test(pin) || pin.length !== lockCfg.len){ $('lockMsg').textContent = 'El PIN tiene ' + lockCfg.len + ' dígitos.'; return Promise.resolve(); }
+    return checkPin(pin).then(function(ok){
+      if(ok){ unlock(); return; }
+      var f = pinFalla(); $('lockPin').value = '';
+      if(f.n >= 5) lockWaitUi();
+      else $('lockMsg').textContent = 'PIN incorrecto. ' + (5 - f.n === 1 ? 'Te queda 1 intento' : 'Te quedan ' + (5 - f.n) + ' intentos') + ' antes de una espera.';
+      try{ $('lockPin').focus(); }catch(e){}
+    }).catch(function(){ $('lockMsg').textContent = 'No se pudo verificar el PIN en este navegador.'; });
+  }
+  $('lockForm').addEventListener('submit', function(e){ e.preventDefault(); tryPin(); });
+  $('lockPin').addEventListener('input', function(){
+    this.value = this.value.replace(/\D/g, '').slice(0, 8);
+    if(lockCfg && this.value.length === lockCfg.len) tryPin();
+  });
+
+  // Huella o reconocimiento del dispositivo (WebAuthn con autenticador de la plataforma). Siempre queda el PIN.
+  var bioUi = false;
+  function bioProbe(){
+    if(!(window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable && navigator.credentials && cryptoOk)) return Promise.resolve(false);
+    return PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(function(v){ return !!v; }, function(){ return false; });
+  }
+  function bioRegister(){
+    return navigator.credentials.create({publicKey:{
+      challenge:randBytes(32), rp:{name:'Cuentas por Persona'}, user:{id:randBytes(16), name:'cuentas', displayName:'Cuentas por Persona'},
+      pubKeyCredParams:[{type:'public-key', alg:-7}, {type:'public-key', alg:-257}],
+      authenticatorSelection:{authenticatorAttachment:'platform', userVerification:'required', residentKey:'discouraged'}, timeout:60000, attestation:'none'
+    }}).then(function(c){ return b64(new Uint8Array(c.rawId)); });
+  }
+  function bioAsk(){
+    return navigator.credentials.get({publicKey:{
+      challenge:randBytes(32), allowCredentials:[{type:'public-key', id:unb64(lockCfg.bio)}], userVerification:'required', timeout:60000
+    }});
+  }
+  $('lockBio').addEventListener('click', function(){
+    if(!(lockCfg && lockCfg.bio)) return;
+    $('lockMsg').textContent = '';
+    bioAsk().then(function(){ unlock(); }, function(){ $('lockMsg').textContent = 'No se pudo verificar la huella. Probá de nuevo o usá el PIN.'; });
+  });
+
+  // Olvidé el PIN: con la sincronización conectada se confirma con el token de GitHub; sin ella, solo se puede borrar este dispositivo.
+  var wipeLockArmed = false;
+  $('lockForgot').addEventListener('click', function(){
+    var box = $('lockRec'); box.textContent = ''; box.hidden = !box.hidden; if(box.hidden) return;
+    if(cfg && cfg.token){
+      var t = h('input',{type:'password',id:'lockTok',autocomplete:'off',placeholder:'Token de GitHub','aria-label':'Token de GitHub'});
+      var m = h('p',{class:'msg err',role:'alert'});
+      var b = h('button',{class:'btn',type:'button',text:'Quitar el PIN'});
+      b.addEventListener('click', function(){
+        if(t.value.trim() && t.value.trim() === cfg.token){
+          lockCfg = null; lockSave(); failSet(null); document.documentElement.classList.remove('locked'); render(); renderSec();
+          secMsg = 'Se quitó el PIN. Podés crear uno nuevo.'; renderSec();
+        } else { m.textContent = 'El token no coincide con el que está conectado en este dispositivo.'; }
+      });
+      box.appendChild(h('p',{text:'Pegá el token de GitHub con el que conectaste la sincronización. Se quita el PIN y tus datos no se tocan.'}));
+      box.appendChild(t); box.appendChild(m); box.appendChild(b);
+    } else {
+      var b2 = h('button',{class:'btn danger ghost',type:'button',text:'Borrar los datos de este dispositivo'});
+      b2.addEventListener('click', function(){
+        if(!wipeLockArmed){ wipeLockArmed = true; b2.textContent = 'Tocá otra vez: se borra todo y no se puede deshacer'; setTimeout(function(){ wipeLockArmed = false; b2.textContent = 'Borrar los datos de este dispositivo'; }, 4000); return; }
+        try{ localStorage.removeItem(KEY); localStorage.removeItem(LKEY); localStorage.removeItem(FKEY); }catch(e){}
+        location.reload();
+      });
+      box.appendChild(h('p',{text:'Este dispositivo no tiene la sincronización conectada, así que no hay forma de confirmar que sos vos. Lo único posible es borrar los datos de acá y empezar de cero.'}));
+      box.appendChild(b2);
+    }
+  });
+
+  // Bloqueo automático al volver a la app después de un rato.
+  document.addEventListener('visibilitychange', function(){
+    if(!lockCfg) return;
+    if(document.hidden){ hiddenAt = Date.now(); return; }
+    if(hiddenAt && !lockedNow() && (Date.now() - hiddenAt) >= (lockCfg.auto || 0) * 1000) lockShow();
+    hiddenAt = 0;
+  });
+
+  // Ajustes de seguridad
+  function secField(id, label, hintTxt){
+    var inp = h('input',{type:'password',id:id,inputmode:'numeric',autocomplete:'off',maxlength:'8'});
+    inp.addEventListener('input', function(){ inp.value = inp.value.replace(/\D/g, '').slice(0, 8); });
+    return h('div',{class:'field'}, h('label',{for:id,text:label}), inp);
+  }
+  function renderSec(){
+    var box = $('secBox'); box.textContent = '';
+    $('lockNowBtn').hidden = !lockCfg;
+    $('lockSum').textContent = 'Seguridad: PIN y huella' + (lockCfg ? ' (activa)' : '');
+    if(!cryptoOk){ box.appendChild(h('p',{class:'sec-st',text:'Este navegador no permite crear un PIN acá (hace falta abrir la app desde una dirección https).'})); return; }
+    var msg = h('p',{class:'msg err',id:'secMsg',role:'alert',text:secMsg}); secMsg = '';
+    function ok(t){ msg.className = 'msg'; msg.textContent = t; }
+    function bad(t, f){ msg.className = 'msg err'; msg.textContent = t; if(f) $(f).focus(); }
+    if(!lockCfg){
+      box.appendChild(h('p',{class:'sec-st',text:'La app no tiene PIN. Si otras personas usan este dispositivo, creá uno: se pide al abrir la app y al volver después de un rato.'}));
+      var f = h('form',{novalidate:'novalidate'}, secField('sPin1','Nuevo PIN (de 4 a 8 números)'), secField('sPin2','Repetir el PIN'), msg, h('div',{class:'actions'}, h('button',{class:'btn',type:'submit',text:'Crear PIN'})));
+      f.addEventListener('submit', function(e){
+        e.preventDefault();
+        var a = $('sPin1').value, b = $('sPin2').value;
+        if(!/^\d{4,8}$/.test(a)) return bad('El PIN tiene que ser de 4 a 8 números.', 'sPin1');
+        if(a !== b) return bad('Los dos PIN no coinciden.', 'sPin2');
+        var salt = b64(randBytes(16)), it = 150000;
+        hashPin(a, salt, it).then(function(hh){
+          lockCfg = {salt:salt, hash:hh, it:it, len:a.length, bio:null, auto:60}; lockSave(); failSet(null); unlockedAt = Date.now();
+          secMsg = 'PIN creado. Se va a pedir al abrir la app.'; renderSec();
+        }, function(){ bad('No se pudo crear el PIN en este navegador.'); });
+      });
+      box.appendChild(f);
+      return;
+    }
+    box.appendChild(h('p',{class:'sec-st'}, h('b',{text:'PIN activo'}), document.createTextNode(lockCfg.bio ? ' · huella activada' : '')));
+    // bloqueo automático
+    var sel = h('select',{id:'sAuto','aria-label':'Bloquear al volver a la app'});
+    [[0,'Siempre que salgas de la app'],[60,'Si pasó 1 minuto'],[300,'Si pasaron 5 minutos'],[900,'Si pasaron 15 minutos']].forEach(function(o){ sel.appendChild(h('option',{value:String(o[0]),text:o[1]})); });
+    sel.value = String(lockCfg.auto || 0); if(sel.value !== String(lockCfg.auto || 0)) sel.value = '60';
+    sel.addEventListener('change', function(){ lockCfg.auto = +sel.value; lockSave(); ok('Listo.'); });
+    box.appendChild(h('div',{class:'field'}, h('label',{for:'sAuto',text:'Volver a pedir el PIN'}), sel));
+    // huella
+    if(bioUi){
+      var bb = h('button',{class:'btn ghost',type:'button',text:lockCfg.bio ? 'Quitar la huella' : 'Activar huella'});
+      bb.addEventListener('click', function(){
+        if(lockCfg.bio){ lockCfg.bio = null; lockSave(); secMsg = 'Huella desactivada.'; renderSec(); return; }
+        bb.disabled = true; ok('Seguí las indicaciones del dispositivo…');
+        bioRegister().then(function(id){ lockCfg.bio = id; lockSave(); secMsg = 'Huella activada. Siempre podés entrar con el PIN.'; renderSec(); },
+          function(){ bb.disabled = false; bad('No se pudo activar la huella en este dispositivo.'); });
+      });
+      box.appendChild(h('div',{class:'actions'}, bb));
+    } else {
+      box.appendChild(h('p',{class:'hint',text:'La huella o el reconocimiento facial no está disponible en este navegador o dispositivo.'}));
+    }
+    // cambiar / quitar
+    if(lockMode){
+      var quitar = lockMode === 'quitar';
+      var f2 = h('form',{novalidate:'novalidate'}, secField('sCur','PIN actual'), quitar ? null : secField('sPin1','Nuevo PIN (de 4 a 8 números)'), quitar ? null : secField('sPin2','Repetir el nuevo PIN'), msg,
+        h('div',{class:'actions'}, h('button',{class:'btn' + (quitar ? ' danger' : ''),type:'submit',text:quitar ? 'Quitar el PIN' : 'Guardar PIN nuevo'}), (function(){ var c = h('button',{class:'btn ghost',type:'button',text:'Cancelar'}); c.addEventListener('click', function(){ lockMode = ''; renderSec(); }); return c; })()));
+      f2.addEventListener('submit', function(e){
+        e.preventDefault();
+        var cur = $('sCur').value;
+        if(esperaSeg() > 0) return bad('Demasiados intentos. Esperá ' + esperaSeg() + ' s.');
+        if(!/^\d+$/.test(cur) || cur.length !== lockCfg.len) return bad('Escribí tu PIN actual (' + lockCfg.len + ' dígitos).', 'sCur');
+        checkPin(cur).then(function(valid){
+          if(!valid){ var ff = pinFalla(); return bad(ff.n >= 5 ? 'Demasiados intentos. Esperá un rato.' : 'El PIN actual no es correcto.', 'sCur'); }
+          failSet(null);
+          if(quitar){ lockCfg = null; lockSave(); lockMode = ''; secMsg = 'Se quitó el PIN.'; renderSec(); return; }
+          var a = $('sPin1').value, b = $('sPin2').value;
+          if(!/^\d{4,8}$/.test(a)) return bad('El PIN nuevo tiene que ser de 4 a 8 números.', 'sPin1');
+          if(a !== b) return bad('Los dos PIN nuevos no coinciden.', 'sPin2');
+          var salt = b64(randBytes(16));
+          return hashPin(a, salt, lockCfg.it).then(function(hh){ lockCfg.salt = salt; lockCfg.hash = hh; lockCfg.len = a.length; lockSave(); lockMode = ''; secMsg = 'PIN cambiado.'; renderSec(); });
+        }).catch(function(){ bad('No se pudo verificar el PIN en este navegador.'); });
+      });
+      box.appendChild(f2);
+    } else {
+      var bc = h('button',{class:'btn ghost',type:'button',text:'Cambiar PIN'}); bc.addEventListener('click', function(){ lockMode = 'cambiar'; renderSec(); $('sCur').focus(); });
+      var bq = h('button',{class:'btn ghost',type:'button',text:'Quitar PIN'}); bq.addEventListener('click', function(){ lockMode = 'quitar'; renderSec(); $('sCur').focus(); });
+      var bl = h('button',{class:'btn',type:'button',text:'Bloquear ahora'}); bl.addEventListener('click', lockNow);
+      box.appendChild(h('div',{class:'actions'}, bl, bc, bq)); box.appendChild(msg);
+    }
+  }
+  $('lockNowBtn').addEventListener('click', lockNow);
+  lockCfg = lockLoad();
+  if(!lockCfg) document.documentElement.classList.remove('locked');
+  else if(lockedNow()) lockShow();
+  renderSec();
+  bioProbe().then(function(v){ bioUi = v; renderSec(); if(lockCfg && lockedNow()) $('lockBio').hidden = !(lockCfg.bio && bioUi); });
 
   $('fecha').value = today(0);
   syncButton();
