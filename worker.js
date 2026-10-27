@@ -1,8 +1,13 @@
 // Intermediario entre la app "Cuentas por Persona" y la API de Anthropic.
 // La clave de Anthropic vive acá como secreto; la app solo conoce la dirección de este Worker y un código de acceso.
 //
+// Dos formas de leer el ticket:
+//   - Workers AI de Cloudflare (gratis dentro del cupo diario, sin clave): conexión (binding) llamada AI.
+//   - Anthropic (de pago): secreto ANTHROPIC_API_KEY. Si existen las dos, se usa Workers AI.
+//
 // Variables (se cargan en Cloudflare, ver LEEME.md):
-//   ANTHROPIC_API_KEY  (secreto)   clave de Anthropic
+//   AI                 (binding)   Workers AI
+//   ANTHROPIC_API_KEY  (secreto, opcional) clave de Anthropic
 //   APP_TOKEN          (secreto)   código de acceso que usa la app
 //   ALLOWED_ORIGINS    (variable)  sitios que pueden usarlo, separados por coma. Ej: https://sbranda.github.io
 //   MODEL              (variable, opcional) por defecto claude-haiku-5-5
@@ -11,6 +16,7 @@
 const MAX_B64 = 1400000;           // ~1 MB de imagen
 const MAX_BODY = 1600000;
 const DEFAULT_MODEL = 'claude-haiku-5-5';
+const DEFAULT_AI_MODEL = '@cf/meta/llama-3.2-11b-vision-instruct';
 
 function corsHeaders(origin){
   return {
@@ -46,7 +52,7 @@ export default {
     const origin = req.headers.get('origin') || '';
     const okOrigin = allowed.indexOf(origin) !== -1;
     if(req.method === 'OPTIONS') return okOrigin ? new Response(null, {status: 204, headers: corsHeaders(origin)}) : new Response(null, {status: 403});
-    if(!allowed.length || !env.APP_TOKEN || !env.ANTHROPIC_API_KEY) return json(500, {error: 'sin configurar'}, okOrigin ? origin : '');
+    if(!allowed.length || !env.APP_TOKEN || !(env.AI || env.ANTHROPIC_API_KEY)) return json(500, {error: 'sin configurar'}, okOrigin ? origin : '');
     if(!okOrigin) return json(403, {error: 'origen no permitido'});
     if(req.method !== 'POST') return json(405, {error: 'método no permitido'}, origin);
     if(!(await safeEqual(req.headers.get('x-app-token') || '', String(env.APP_TOKEN)))) return json(401, {error: 'código de acceso inválido'}, origin);
@@ -70,23 +76,45 @@ export default {
       if(count >= max) return json(429, {error: 'se llegó al tope diario'}, origin);
     }
 
-    let up;
-    try{
-      up = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {'content-type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01'},
-        body: JSON.stringify({model: env.MODEL || DEFAULT_MODEL, max_tokens: 300, messages: [{role: 'user', content: [
-          {type: 'image', source: {type: 'base64', media_type: 'image/jpeg', data: img}},
-          {type: 'text', text: prompt(conceptos)}]}]})
-      });
-    }catch(e){ return json(502, {error: 'no se pudo contactar a Anthropic'}, origin); }
-    if(!up.ok){
-      // Nunca se devuelve el detalle de Anthropic (podría nombrar la clave). 429/529 se avisan como "ocupado".
-      const busy = up.status === 429 || up.status === 529;
-      return json(busy ? 429 : 502, {error: busy ? 'ocupado' : 'Anthropic rechazó el pedido (' + up.status + ')'}, origin);
+    let texto;
+    if(env.AI){
+      // Workers AI. Meta pide aceptar su licencia una sola vez por cuenta: si lo pide, se acepta y se reintenta.
+      const modelo = env.AI_MODEL || DEFAULT_AI_MODEL;
+      const pedido = {max_tokens: 300, messages: [{role: 'user', content: [
+        {type: 'text', text: prompt(conceptos)},
+        {type: 'image_url', image_url: {url: 'data:image/jpeg;base64,' + img}}]}]};
+      let r;
+      try{
+        try{ r = await env.AI.run(modelo, pedido); }
+        catch(e){
+          if(!/agree|license|5016/i.test(String(e && e.message || e))) throw e;
+          await env.AI.run(modelo, {prompt: 'agree'});
+          r = await env.AI.run(modelo, pedido);
+        }
+      }catch(e){ return json(502, {error: 'Workers AI no pudo leer la imagen'}, origin); }
+      const resp = r && r.response;
+      texto = typeof resp === 'string' ? resp : (resp && typeof resp === 'object' ? JSON.stringify(resp) : '');
+      if(!texto) return json(502, {error: 'Workers AI no devolvió texto'}, origin);
+    } else {
+      let up;
+      try{
+        up = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {'content-type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01'},
+          body: JSON.stringify({model: env.MODEL || DEFAULT_MODEL, max_tokens: 300, messages: [{role: 'user', content: [
+            {type: 'image', source: {type: 'base64', media_type: 'image/jpeg', data: img}},
+            {type: 'text', text: prompt(conceptos)}]}]})
+        });
+      }catch(e){ return json(502, {error: 'no se pudo contactar a Anthropic'}, origin); }
+      if(!up.ok){
+        // Nunca se devuelve el detalle de Anthropic (podría nombrar la clave). 429/529 se avisan como "ocupado".
+        const busy = up.status === 429 || up.status === 529;
+        return json(busy ? 429 : 502, {error: busy ? 'ocupado' : 'Anthropic rechazó el pedido (' + up.status + ')'}, origin);
+      }
+      const data = await up.json();
+      texto = (data.content || []).filter(x => x && x.type === 'text').map(x => x.text).join('');
     }
-    const data = await up.json();
     if(env.LIMITES) await env.LIMITES.put(kvKey, String(count + 1), {expirationTtl: 172800});
-    return json(200, {content: (data.content || []).filter(x => x && x.type === 'text').map(x => ({type: 'text', text: x.text}))}, origin);
+    return json(200, {content: [{type: 'text', text: texto}]}, origin);
   }
 };

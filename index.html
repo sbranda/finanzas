@@ -78,7 +78,7 @@ form{display:grid;gap:14px}
 .field{display:grid;gap:6px;min-width:0}
 .field>label{font-size:13px;font-weight:600;color:var(--muted)}
 select:disabled{opacity:.6}
-input[type=text],input[type=date],input[type=month],input[type=email],input[type=password],textarea,select{width:100%;min-width:0;font:inherit;font-size:16px;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:11px 12px}
+input[type=text],input[type=date],input[type=month],input[type=email],input[type=url],input[type=password],textarea,select{width:100%;min-width:0;font:inherit;font-size:16px;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:11px 12px}
 input:focus-visible,textarea:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #monto{font-family:var(--font-num);font-size:18px;font-weight:600}
 .row2{display:grid;grid-template-columns:1.2fr 1fr;gap:12px}
@@ -1890,8 +1890,8 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     var st = $('aiState'); st.textContent = '· ' + (ai ? 'lista' : 'sin clave'); st.className = 'sstate' + (ai ? ' ok' : '');
     $('aiDel').hidden = !ai;
     $('aiInfo').textContent = ai
-      ? 'Tocá "Foto del ticket" en el formulario: la IA completa monto, concepto y fecha, y vos revisás antes de agregar. ' + (ai.url ? 'Usa tu Worker de Cloudflare: la clave de Anthropic no está en este dispositivo.' : 'Usa tu clave de Anthropic guardada en este dispositivo.')
-      : 'Sacás la foto de un ticket y la IA (Claude) completa monto, concepto y fecha. La clave de Anthropic queda en un Worker de Cloudflare tuyo (ver LEEME.md): acá solo guardás su dirección y un código de acceso, que se puede cambiar cuando quieras. La foto del ticket se envía a Anthropic.';
+      ? 'Tocá "Foto del ticket" en el formulario: la IA completa monto, concepto y fecha, y vos revisás antes de agregar. ' + (ai.url ? 'Usa tu Worker de Cloudflare: ninguna clave de IA está en este dispositivo.' : 'Usa tu clave de Anthropic guardada en este dispositivo.')
+      : 'Sacás la foto de un ticket y la IA (Claude) completa monto, concepto y fecha. El Worker de Cloudflare tuyo (ver LEEME.md) hace la lectura: acá solo guardás su dirección y un código de acceso, que se puede cambiar cuando quieras. La foto del ticket se envía al Worker, que la procesa con Workers AI de Cloudflare o con Anthropic, según cómo lo configures.';
   }
   $('aiWForm').addEventListener('submit', function(e){
     e.preventDefault();
@@ -1958,7 +1958,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     if(ai && ai.url){
       if(c === 'ai401') return 'El Worker rechazó el código de acceso. Revisalo en "Leer tickets con IA".';
       if(c === 'ai403') return 'El Worker no acepta pedidos desde este sitio. Revisá ALLOWED_ORIGINS en Cloudflare.';
-      if(c === 'ai502') return 'El Worker no pudo usar la clave de Anthropic (revisá el secreto ANTHROPIC_API_KEY y el saldo de la cuenta).';
+      if(c === 'ai502') return 'El Worker no pudo leer la foto. Probá con otra más nítida; si sigue, revisá en Cloudflare la conexión AI (o la clave y el saldo de Anthropic).';
       if(c === 'ai500') return 'El Worker está sin configurar (faltan variables en Cloudflare).';
       if(c === 'ai429') return 'Se llegó al tope diario o la IA está ocupada. Probá más tarde.';
       if(c === 'ai413') return 'La foto es demasiado grande para el Worker.';
