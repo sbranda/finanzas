@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <script>try{if(localStorage.getItem("cuentas-lock-v1"))document.documentElement.className+=" locked"}catch(e){}</script>
-<title>Cuentas por Persona</title>
+<title>Mis Cuentas</title>
 <meta name="description" content="Ingresos y egresos agrupados por persona, con saldo total en vivo.">
 <meta name="theme-color" content="#EDF0F4" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0F161E" media="(prefers-color-scheme: dark)">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Cuentas">
+<meta name="apple-mobile-web-app-title" content="Mis Cuentas">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icon-192.png">
@@ -287,7 +287,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
 <body>
 <div id="lock" role="dialog" aria-modal="true" aria-labelledby="lockT">
   <div class="lock-box">
-    <h1 id="lockT">Cuentas por Persona</h1>
+    <h1 id="lockT">Mis Cuentas</h1>
     <p id="lockSub">Ingresá tu PIN para abrir la app.</p>
     <form id="lockForm" novalidate>
       <label class="sr" for="lockPin">PIN</label>
@@ -502,7 +502,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
         <div class="field"><label for="ghToken">Token de GitHub</label><input type="password" id="ghToken" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ghp_…"></div>
         <div class="actions">
           <button class="btn" type="submit" id="ghConnect">Conectar</button>
-          <a class="btn ghost" id="ghNew" href="https://github.com/settings/tokens/new?scopes=gist&amp;description=Cuentas%20por%20Persona" target="_blank" rel="noopener">Crear token</a>
+          <a class="btn ghost" id="ghNew" href="https://github.com/settings/tokens/new?scopes=gist&amp;description=Mis%20Cuentas" target="_blank" rel="noopener">Crear token</a>
         </div>
       </form>
       <div id="ghOn" class="auth" hidden>
@@ -2380,7 +2380,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     d = d || (state.sample ? emptyData() : dataOf(state));
     if(e === undefined) e = enc;
     return fileBody(d, e).then(function(files){
-      return gh('/gists', 'POST', {description:'Cuentas por Persona (datos de la app, no borrar)', public:false, files:files});
+      return gh('/gists', 'POST', {description:'Mis Cuentas (datos de la app, no borrar)', public:false, files:files});
     }).then(function(g){ return g.id; });
   }
   function connect(token){
@@ -2736,7 +2736,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   }
   function bioRegister(){
     return navigator.credentials.create({publicKey:{
-      challenge:randBytes(32), rp:{name:'Cuentas por Persona'}, user:{id:randBytes(16), name:'cuentas', displayName:'Cuentas por Persona'},
+      challenge:randBytes(32), rp:{name:'Mis Cuentas'}, user:{id:randBytes(16), name:'cuentas', displayName:'Mis Cuentas'},
       pubKeyCredParams:[{type:'public-key', alg:-7}, {type:'public-key', alg:-257}],
       authenticatorSelection:{authenticatorAttachment:'platform', userVerification:'required', residentKey:'discouraged'}, timeout:60000, attestation:'none'
     }}).then(function(c){ return b64(new Uint8Array(c.rawId)); });

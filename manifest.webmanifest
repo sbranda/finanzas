@@ -1,6 +1,6 @@
 {
-  "name": "Cuentas por Persona",
-  "short_name": "Cuentas",
+  "name": "Mis Cuentas",
+  "short_name": "Mis Cuentas",
   "description": "Ingresos y egresos agrupados por persona, con saldo total en vivo.",
   "lang": "es-AR",
   "start_url": "./",
