@@ -164,6 +164,18 @@ textarea{font-family:var(--font-num);font-size:13px;min-height:90px;resize:verti
 .g-tip{position:absolute;z-index:6;pointer-events:none;background:var(--ink);color:var(--surface);padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.35;max-width:min(260px,80%);box-shadow:0 2px 10px rgba(0,0,0,.25)}
 .g-tip strong{display:block;font-size:14px}
 .pr-track.done i{background:var(--in)}
+.field>.lt{font-size:13px;font-weight:600;color:var(--muted)}
+#paraBox[hidden]{display:none}
+.dd-list{list-style:none;margin:0;padding:0}
+.dd-list>li{display:grid;gap:8px;padding:12px 0;border-top:1px solid var(--line)}
+.dd-main{margin:0;font-size:15px;overflow-wrap:anywhere}
+.dd-det{font-size:12px;color:var(--muted)}
+.dd-det summary{cursor:pointer}
+.dd-det ul{list-style:none;margin:6px 0 0;padding:0}
+.dd-det li{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:6px 0;border-top:1px solid var(--line)}
+.dd-hist{list-style:none;margin:0;padding:0}
+.dd-hist li{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:8px 0;border-top:1px solid var(--line);font-size:13px;align-items:center}
+.dd-ok{margin:0;font-size:14px;color:var(--muted)}
 .mt-row{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .mt-row input{flex:1 1 110px;min-width:0}
 .mt-row .btn{padding:9px 12px;font-size:14px}
@@ -283,6 +295,11 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       <input type="text" id="persona" maxlength="40" placeholder="Escribí un nombre o tocá uno">
       <div id="chips" class="chips"></div>
     </div>
+    <div class="field" id="paraBox">
+      <span class="lt" id="paraL">Pagado para (opcional)</span>
+      <div id="paraList" class="chips" role="group" aria-labelledby="paraL"></div>
+      <p class="rec-hint" id="paraHint">Si este egreso lo pagó una cuenta por otras (por ejemplo, el hogar por Ana y Martín), tocá a quiénes. Se divide en partes iguales y quedan debiendo su parte.</p>
+    </div>
     <div class="row2">
       <div class="field"><label for="monto">Monto (ARS)</label><input type="text" id="monto" inputmode="decimal" placeholder="0,00"></div>
       <div class="field"><label for="fecha">Fecha</label><input type="date" id="fecha"></div>
@@ -343,6 +360,14 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     <ul id="bList" class="b-list" hidden></ul>
     <button class="btn ghost b-more" type="button" id="bMore" hidden></button>
   </section>
+
+  <details class="card rec" id="deudaDet">
+    <summary id="deudaSum">Cuentas entre personas</summary>
+    <p class="rec-hint">Calcula quién le debe cuánto a quién a partir de los egresos que marcaste como "pagado para". Registrar un pago acá no mueve plata en las cuentas: solo descuenta de la deuda.</p>
+    <ul class="dd-list" id="deudaList"></ul>
+    <p class="dd-ok" id="deudaOk" hidden></p>
+    <details class="dd-det" id="deudaHistDet" hidden><summary id="deudaHistSum">Pagos registrados</summary><ul class="dd-hist" id="deudaHist"></ul></details>
+  </details>
 
   <details class="card rec" id="metaDet">
     <summary id="metaSum">Metas de ahorro</summary>
@@ -524,6 +549,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
           s.omit = (s.omit && typeof s.omit === 'object') ? s.omit : {};
           s.presup = Array.isArray(s.presup) ? s.presup : [];
           s.metas = Array.isArray(s.metas) ? s.metas : [];
+          s.saldos = Array.isArray(s.saldos) ? s.saldos : [];
           s.aportes = Array.isArray(s.aportes) ? s.aportes : [];
           delete s.outbox; delete s.owner;
           s.movs.forEach(function(m){ m.upd = m.upd || m.ts || 1; });
@@ -620,6 +646,8 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     renderRec(gs);
     renderPres(gs);
     renderMetas();
+    renderDeudas();
+    renderPara(gs);
     animateTotal(t.saldo);
     $('totIn').textContent = money(t.ing);
     $('totOut').textContent = money(t.egr);
@@ -672,7 +700,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
           ul.appendChild(h('li',null,
             h('span',{class:'m-c',text:m.concepto || (m.tipo === 'in' ? 'Ingreso' : 'Egreso')}),
             h('span',{class:'m-a num ' + (m.tipo === 'in' ? 'in' : 'out'),text:(m.tipo === 'in' ? '+' : '−') + money(m.cents)}),
-            h('span',{class:'m-meta'}, document.createTextNode(ddmmyy(m.fecha) + ' · acumulado '), h('span',{class:'num',text:money(r.acc)})),
+            h('span',{class:'m-meta'}, document.createTextNode((m.para && m.para.length ? 'para ' + m.para.join(', ') + ' · ' : '') + ddmmyy(m.fecha) + ' · acumulado '), h('span',{class:'num',text:money(r.acc)})),
             h('span',{class:'m-acts'}, editBtn(m, 'acc'), del)
           ));
         });
@@ -778,7 +806,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     var q = plano(bf.q).trim();
     if(q){
       var monto = (m.cents / 100).toFixed(2).replace('.', ',');
-      var hay = plano(m.concepto) + ' ' + plano(m.persona) + ' ' + monto + ' ' + monto.replace(/,00$/, '') + ' ' + money(m.cents).replace(/\s/g, ' ');
+      var hay = plano(m.concepto) + ' ' + plano(m.persona) + ' ' + plano((m.para || []).join(' ')) + ' ' + monto + ' ' + monto.replace(/,00$/, '') + ' ' + money(m.cents).replace(/\s/g, ' ');
       var qn = q.replace(/\./g, '');
       if(!q.split(/\s+/).every(function(w){ return hay.indexOf(w) >= 0 || (/^[\d.,]+$/.test(w) && hay.indexOf(w.replace(/\./g, '')) >= 0); })) return false;
     }
@@ -818,7 +846,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       ul.appendChild(h('li',null,
         h('span',{class:'m-c',text:m.concepto || (m.tipo === 'in' ? 'Ingreso' : 'Egreso')}),
         h('span',{class:'m-a num ' + (m.tipo === 'in' ? 'in' : 'out'),text:(m.tipo === 'in' ? '+' : '−') + money(m.cents)}),
-        h('span',{class:'m-meta',text:m.persona + ' · ' + ddmmyy(m.fecha)}),
+        h('span',{class:'m-meta',text:m.persona + ' · ' + ddmmyy(m.fecha) + (m.para && m.para.length ? ' · para ' + m.para.join(', ') : '')}),
         h('span',{class:'m-acts'}, editBtn(m, 'busca'))
       ));
     });
@@ -888,6 +916,108 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   $('gCuenta').addEventListener('change', function(){ cuentaSel = this.value; renderGastos(groups()); });
   $('gTabla').addEventListener('click', function(){ verTabla = !verTabla; renderGastos(groups()); });
   document.addEventListener('click', hideTip);
+
+  // ---------- Cuentas entre personas ----------
+  // Un egreso con 'para' (lista de cuentas) lo pagó su cuenta por esas cuentas: se divide en partes iguales y
+  // cada una (menos quien pagó) le debe su parte a quien pagó. Los pagos registrados (saldos) descuentan la deuda.
+  var paraSel = {}, deudaVals = {}, deudaFocus = null, armedSaldo = null;
+  function paraNombres(){ return Object.keys(paraSel).map(function(k){ return paraSel[k]; }); }
+  function renderPara(gs){
+    var box = $('paraBox'), list = $('paraList');
+    box.hidden = tipo() === 'in';
+    list.textContent = '';
+    var vivos = {}; gs.forEach(function(g){ vivos[g.key] = g.name; });
+    Object.keys(paraSel).forEach(function(k){ if(!vivos[k]) delete paraSel[k]; });
+    gs.forEach(function(g){
+      var b = h('button',{class:'chip',type:'button','aria-pressed':String(!!paraSel[g.key]),text:g.name});
+      b.addEventListener('click', function(){
+        if(paraSel[g.key]) delete paraSel[g.key]; else paraSel[g.key] = g.name;
+        b.setAttribute('aria-pressed', String(!!paraSel[g.key]));
+      });
+      list.appendChild(b);
+    });
+    $('paraL').textContent = 'Pagado para (opcional)';
+  }
+  function calcDeudas(){
+    var owes = {}, names = {}, items = {};
+    function nom(n){ var k = pkey(n); if(!names[k]) names[k] = n; return k; }
+    function push(x, y, c, it){ // x le debe c a y
+      var k = x + '>' + y; owes[k] = (owes[k] || 0) + c;
+      (items[k] = items[k] || []).push(it);
+    }
+    state.movs.forEach(function(m){
+      if(m.tipo !== 'out' || !m.para || !m.para.length) return;
+      var P = nom(m.persona), n = m.para.length, base = Math.floor(m.cents / n), rem = m.cents - base * n;
+      m.para.forEach(function(b, i){
+        var B = nom(b), share = base + (i < rem ? 1 : 0);
+        if(B === P || share <= 0) return;
+        push(B, P, share, {fecha:m.fecha, ts:m.ts, signo:1, txt:(m.concepto || 'Egreso') + ' · ' + m.persona + ' pagó ' + money(m.cents) + ' para ' + m.para.join(', '), cents:share});
+      });
+    });
+    (state.saldos || []).forEach(function(r){
+      var D = nom(r.de), A = nom(r.a);
+      push(D, A, -r.cents, {fecha:r.fecha, ts:r.ts, signo:-1, txt:'Pago de ' + r.de + ' a ' + r.a, cents:r.cents, saldo:r});
+    });
+    var pares = {}, out = [];
+    Object.keys(owes).forEach(function(k){
+      var xy = k.split('>'), a = xy[0] < xy[1] ? xy[0] : xy[1], b = xy[0] < xy[1] ? xy[1] : xy[0];
+      pares[a + '|' + b] = [a, b];
+    });
+    Object.keys(pares).forEach(function(k){
+      var a = pares[k][0], b = pares[k][1], net = (owes[a + '>' + b] || 0) - (owes[b + '>' + a] || 0);
+      if(net === 0) return;
+      var deudor = net > 0 ? a : b, acreedor = net > 0 ? b : a, det = [];
+      (items[deudor + '>' + acreedor] || []).forEach(function(it){ det.push({fecha:it.fecha, ts:it.ts, txt:it.txt, cents:it.signo * it.cents}); });
+      (items[acreedor + '>' + deudor] || []).forEach(function(it){ det.push({fecha:it.fecha, ts:it.ts, txt:it.txt + (it.signo > 0 ? ' (a favor de ' + names[deudor] + ')' : ''), cents:-it.signo * it.cents}); });
+      det.sort(function(x, y){ return x.fecha < y.fecha ? 1 : x.fecha > y.fecha ? -1 : y.ts - x.ts; });
+      out.push({deudor:names[deudor], acreedor:names[acreedor], cents:Math.abs(net), det:det, key:deudor + '>' + acreedor});
+    });
+    return out.sort(function(x, y){ return y.cents - x.cents; });
+  }
+  function renderDeudas(){
+    var ds = calcDeudas(), list = $('deudaList'), ae = document.activeElement;
+    if(ae && ae.getAttribute && ae.getAttribute('data-dk')){ deudaFocus = {k:ae.getAttribute('data-dk'), sel:(function(){ try{ return ae.selectionStart; }catch(x){ return null; } })()}; }
+    list.textContent = '';
+    var hay = (state.movs || []).some(function(m){ return m.tipo === 'out' && m.para && m.para.length; }) || (state.saldos || []).length > 0;
+    $('deudaSum').textContent = 'Cuentas entre personas' + (ds.length ? ' (' + ds.length + (ds.length === 1 ? ' pendiente' : ' pendientes') + ')' : '');
+    var ok = $('deudaOk'); ok.hidden = !!ds.length;
+    ok.textContent = hay ? 'Todo al día: nadie le debe nada a nadie.' : 'Todavía no hay egresos marcados como "pagado para". Al cargar un egreso, tocá a quiénes beneficia y acá aparece lo que te deben.';
+    ds.forEach(function(d){
+      var v = (d.key in deudaVals) ? deudaVals[d.key] : montoTxt(d.cents);
+      var inp = h('input',{type:'text',inputmode:'decimal',autocomplete:'off','data-dk':d.key,'aria-label':'Monto del pago de ' + d.deudor + ' a ' + d.acreedor});
+      inp.value = v; inp.addEventListener('input', function(){ deudaVals[d.key] = inp.value; });
+      var bt = h('button',{class:'btn',type:'button',text:'Registrar pago'});
+      bt.addEventListener('click', function(){
+        var c = parseMonto(inp.value);
+        if(c === null){ inp.focus(); setMsg('Monto no válido. Usá números y coma para los centavos, por ejemplo 1.500,50.', true); return; }
+        var now = Date.now();
+        (state.saldos = state.saldos || []).push({id:uid(), de:d.deudor, a:d.acreedor, cents:c, fecha:today(0), ts:now, upd:now, rev:0});
+        delete deudaVals[d.key]; touched(); render();
+        setMsg(d.deudor + ' le pagó ' + money(c) + ' a ' + d.acreedor + '.' + (c > d.cents ? ' Pagó de más: ahora ' + d.acreedor + ' le debe ' + money(c - d.cents) + '.' : c === d.cents ? ' Quedaron a mano.' : ' Todavía debe ' + money(d.cents - c) + '.'));
+      });
+      var det = h('details',{class:'dd-det'}, h('summary',{text:'Ver detalle (' + d.det.length + ')'}));
+      var ul = h('ul'); d.det.forEach(function(x){ ul.appendChild(h('li',null, h('span',{text:ddmmyy(x.fecha) + ' · ' + x.txt}), h('span',{class:'num ' + (x.cents < 0 ? 'in' : 'out'),text:(x.cents < 0 ? '−' : '+') + money(Math.abs(x.cents))}))); });
+      det.appendChild(ul);
+      list.appendChild(h('li',null,
+        h('p',{class:'dd-main'}, h('b',{text:d.deudor}), document.createTextNode(' le debe '), h('b',{class:'num out',text:money(d.cents)}), document.createTextNode(' a '), h('b',{text:d.acreedor})),
+        h('div',{class:'mt-row'}, inp, bt), det));
+    });
+    var hs = (state.saldos || []).slice().sort(function(a, b){ return a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : b.ts - a.ts; }), hl = $('deudaHist');
+    hl.textContent = ''; $('deudaHistDet').hidden = !hs.length; $('deudaHistSum').textContent = 'Pagos registrados (' + hs.length + ')';
+    hs.forEach(function(r){
+      var dl = h('button',{class:'m-del',type:'button','data-armed':armedSaldo === r.id ? '1' : '0','aria-label':'Borrar pago de ' + r.de + ' a ' + r.a + ' del ' + ddmmyy(r.fecha),text:armedSaldo === r.id ? '¿Borrar?' : 'Borrar'});
+      dl.addEventListener('click', function(){
+        if(armedSaldo === r.id){ state.saldos = state.saldos.filter(function(x){ return x.id !== r.id; }); (state.deleted = state.deleted || {})[r.id] = Date.now(); armedSaldo = null; touched(); render(); return; }
+        armedSaldo = r.id; render(); setTimeout(function(){ if(armedSaldo === r.id){ armedSaldo = null; render(); } }, 2500);
+      });
+      hl.appendChild(h('li',null, h('span',{text:ddmmyy(r.fecha) + ' · ' + r.de + ' pagó ' + money(r.cents) + ' a ' + r.a}), dl));
+    });
+    if(deudaFocus){
+      var fe = list.querySelector('[data-dk="' + deudaFocus.k.replace(/"/g, '') + '"]');
+      if(fe){ fe.focus(); try{ if(deudaFocus.sel != null) fe.setSelectionRange(deudaFocus.sel, deudaFocus.sel); }catch(x){} }
+      deudaFocus = null;
+    }
+  }
 
   // ---------- Metas de ahorro ----------
   // Cada meta tiene un monto objetivo y sus aportes (y retiros). No tocan los totales de las cuentas.
@@ -1302,7 +1432,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   var editing = null; // {id, donde:'acc'|'busca', vals, msg, focus, sel}
   function montoTxt(c){ var d = c % 100; return groupMiles(String(Math.floor(c / 100))) + (d ? ',' + (d < 10 ? '0' + d : d) : ''); }
   function empezarEdicion(m, donde){
-    editing = {id:m.id, donde:donde, vals:{persona:m.persona, tipo:m.tipo, monto:montoTxt(m.cents), concepto:m.concepto || '', fecha:m.fecha}, msg:'', focus:'monto', sel:null};
+    editing = {id:m.id, donde:donde, vals:{persona:m.persona, tipo:m.tipo, monto:montoTxt(m.cents), concepto:m.concepto || '', fecha:m.fecha, para:(m.para || []).slice()}, msg:'', focus:'monto', sel:null};
     armed = null; render();
   }
   function guardarEdicion(){
@@ -1321,7 +1451,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       if(ya){ cn = ya.n; } else { state.conceptos.push({t:v.tipo, n:cn, ts:Date.now()}); }
     }
     var now = Date.now();
-    m.persona = name; m.tipo = v.tipo; m.cents = c; m.concepto = cn; m.fecha = fecha;
+    m.persona = name; m.tipo = v.tipo; m.cents = c; m.concepto = cn; m.fecha = fecha; m.para = v.tipo === 'out' ? paraLimpia(v.para) : [];
     m.rev = Math.max(now, (m.rev || 0) + 1, (m.upd || 0) + 1);
     if(mesSel !== 'all') mesSel = monthKey(fecha);
     opened.add(pkey(name));
@@ -1343,12 +1473,27 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     var dlP = h('datalist',{id:'eDlP'}); groups().forEach(function(g){ dlP.appendChild(h('option',{value:g.name})); });
     var dlC = h('datalist',{id:'eDlC'}); var seen = {};
     state.conceptos.forEach(function(c){ if(!seen[pkey(c.n)]){ seen[pkey(c.n)] = 1; dlC.appendChild(h('option',{value:c.n})); } });
+    v.para = (v.para || []).slice();
+    var pbox = h('div',{class:'chips',role:'group','aria-label':'Pagado para'});
+    var nombres = groups().map(function(g){ return g.name; });
+    v.para.forEach(function(n){ if(!nombres.some(function(x){ return pkey(x) === pkey(n); })) nombres.push(n); });
+    nombres.forEach(function(n){
+      var on = v.para.some(function(x){ return pkey(x) === pkey(n); });
+      var b = h('button',{class:'chip',type:'button','aria-pressed':String(on),text:n});
+      b.addEventListener('click', function(){
+        var i = -1; v.para.forEach(function(x, j){ if(pkey(x) === pkey(n)) i = j; });
+        if(i >= 0) v.para.splice(i, 1); else v.para.push(n);
+        b.setAttribute('aria-pressed', String(i < 0));
+      });
+      pbox.appendChild(b);
+    });
     var ok = h('button',{class:'btn',type:'submit',id:'eOk',text:'Guardar cambios'});
     var cancel = h('button',{class:'btn ghost',type:'button',id:'eCancel',text:'Cancelar'});
     cancel.addEventListener('click', function(){ editing = null; render(); });
     var form = h('form',{class:'m-form',novalidate:'novalidate','aria-label':'Editar movimiento'},
       campo('Tipo', 'tipo', selT), campo('Monto', 'monto', iM),
       campo(gname(), 'persona', iP, true), campo('Concepto', 'concepto', iC, true), campo('Fecha', 'fecha', iF, true),
+      h('div',{class:'field wide'}, h('span',{class:'lt',text:'Pagado para (opcional, solo egresos)'}), pbox),
       h('p',{class:'msg err',id:'eMsg',role:'alert',text:E.msg || ''}),
       h('div',{class:'actions'}, ok, cancel), dlP, dlC);
     form.addEventListener('submit', function(e){ e.preventDefault(); guardarEdicion(); });
@@ -1395,7 +1540,19 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     if(ex && !R.confirm){ say('Ya existe "' + ex.name + '". Si seguís, se unen los dos grupos.', true); return; }
     var name = ex ? ex.name : nn, now = Date.now();
     state.movs.forEach(function(m){
-      if(pkey(m.persona) === g.key){ m.persona = name; m.rev = Math.max(now, (m.rev || 0) + 1, (m.upd || 0) + 1); }
+      var tocaPara = (m.para || []).some(function(n){ return pkey(n) === g.key; });
+      if(pkey(m.persona) === g.key || tocaPara){
+        if(pkey(m.persona) === g.key) m.persona = name;
+        if(tocaPara) m.para = paraLimpia(m.para.map(function(n){ return pkey(n) === g.key ? name : n; }));
+        m.rev = Math.max(now, (m.rev || 0) + 1, (m.upd || 0) + 1);
+      }
+    });
+    (state.saldos || []).forEach(function(r){
+      if(pkey(r.de) === g.key || pkey(r.a) === g.key){
+        if(pkey(r.de) === g.key) r.de = name;
+        if(pkey(r.a) === g.key) r.a = name;
+        r.rev = Math.max(now, (r.rev || 0) + 1, (r.upd || 0) + 1);
+      }
     });
     (state.recur || []).forEach(function(r){
       if(pkey(r.persona) === g.key){ r.persona = name; r.rev = Math.max(now, (r.rev || 0) + 1, (r.upd || 0) + 1); }
@@ -1468,7 +1625,8 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       var ya = conceptoExiste(t, cn);
       if(ya){ cn = ya.n; } else { state.conceptos.push({t:t, n:cn, ts:Date.now()}); nuevoConcepto = true; }
     }
-    var mov = {id:uid(), persona:name, tipo:t, cents:c, concepto:cn, fecha:fecha, ts:Date.now(), upd:Date.now()};
+    var mov = {id:uid(), persona:name, tipo:t, cents:c, concepto:cn, fecha:fecha, para:t === 'out' ? paraNombres() : [], ts:Date.now(), upd:Date.now()};
+    paraSel = {};
     state.movs.push(mov);
     if(mesSel !== 'all') mesSel = monthKey(fecha); // se pasa al mes del movimiento para verlo
     touched();
@@ -1517,7 +1675,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
 
   ['persona','monto'].forEach(function(id){ $(id).addEventListener('input', function(){ setMsg(''); renderAll(); }); });
   Array.prototype.forEach.call(document.querySelectorAll('input[name=tipo]'), function(r){
-    r.addEventListener('change', function(){ syncButton(); renderConceptos(); renderAll(); });
+    r.addEventListener('change', function(){ syncButton(); renderConceptos(); renderAll(); renderPara(groups()); });
   });
   $('conceptoSel').addEventListener('change', function(){ $('concepto').value = this.value; setMsg(''); });
   $('concepto').addEventListener('input', syncSel);
@@ -1526,7 +1684,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
 
   function bmsg(t, err){ var m = $('backupMsg'); m.textContent = t; m.style.color = err ? 'var(--out)' : ''; }
   $('copyBtn').addEventListener('click', function(){
-    var txt = JSON.stringify({version:2, movs:state.movs, conceptos:state.conceptos, recur:state.recur || [], presup:state.presup || [], metas:state.metas || [], aportes:state.aportes || [], grupo:state.grupo || null});
+    var txt = JSON.stringify({version:2, movs:state.movs, conceptos:state.conceptos, recur:state.recur || [], presup:state.presup || [], metas:state.metas || [], aportes:state.aportes || [], saldos:state.saldos || [], grupo:state.grupo || null});
     $('backup').value = txt;
     var done = function(){ bmsg('Respaldo copiado. Pegalo en el mismo cuadro del otro dispositivo.'); };
     var fail = function(){ $('backup').focus(); $('backup').select(); bmsg('No se pudo copiar solo. El texto quedó seleccionado: copialo a mano.', true); };
@@ -1538,7 +1696,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       if(!o || !Array.isArray(o.movs)) throw new Error('formato');
       var ok = o.movs.every(function(m){ return m && typeof m.persona === 'string' && (m.tipo === 'in' || m.tipo === 'out') && Number.isInteger(m.cents) && m.cents > 0 && typeof m.fecha === 'string'; });
       if(!ok) throw new Error('datos');
-      var movs = o.movs.map(function(m,i){ return {id:m.id || uid()+i, persona:clean(m.persona), tipo:m.tipo, cents:m.cents, concepto:clean(m.concepto), fecha:m.fecha, ts:m.ts || i}; });
+      var movs = o.movs.map(function(m,i){ return {id:m.id || uid()+i, persona:clean(m.persona), tipo:m.tipo, cents:m.cents, concepto:clean(m.concepto), fecha:m.fecha, para:paraLimpia(m.para), ts:m.ts || i}; });
       state = fresh(true);
       var T = Math.max(state.wipedAt, Date.now()) + 1;
       movs.forEach(function(m){ m.upd = T; });
@@ -1548,6 +1706,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       state.presup = sanitize({presup:o.presup}).presup.map(function(r){ r.upd = T; r.rev = 0; return r; });
       var sm = sanitize({metas:o.metas, aportes:o.aportes}); state.metas = sm.metas.map(function(r){ r.upd = T; r.rev = 0; return r; });
       var vv = {}; state.metas.forEach(function(r){ vv[r.id] = 1; }); state.aportes = sm.aportes.filter(function(r){ return vv[r.meta]; }).map(function(r){ r.upd = T; r.rev = 0; return r; });
+      state.saldos = sanitize({saldos:o.saldos}).saldos.map(function(r){ r.upd = T; r.rev = 0; return r; });
       var gr = sanitize({grupo:o.grupo}).grupo;
       if(gr){ gr.ts = T; state.grupo = gr; }
       touched();
@@ -1625,19 +1784,27 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     var del = state.deleted || {}, wiped = state.wipedAt || 0, now = Date.now();
     if(wipe){
       if(cfg){ del = {}; wiped = now; }
-      else if(!state.sample){ del = Object.assign({}, del); (state.movs || []).forEach(function(m){ del[m.id] = now; }); (state.recur || []).forEach(function(r){ del[r.id] = now; }); (state.presup || []).forEach(function(r){ del[r.id] = now; }); (state.metas || []).forEach(function(r){ del[r.id] = now; }); (state.aportes || []).forEach(function(r){ del[r.id] = now; }); }
+      else if(!state.sample){ del = Object.assign({}, del); (state.movs || []).forEach(function(m){ del[m.id] = now; }); (state.recur || []).forEach(function(r){ del[r.id] = now; }); (state.presup || []).forEach(function(r){ del[r.id] = now; }); (state.metas || []).forEach(function(r){ del[r.id] = now; }); (state.aportes || []).forEach(function(r){ del[r.id] = now; }); (state.saldos || []).forEach(function(r){ del[r.id] = now; }); }
     }
-    return {sample:false, movs:[], conceptos:[], recur:[], omit:{}, presup:[], metas:[], aportes:[], deleted:del, wipedAt:wiped, dirty:!!state.dirty, grupo:state.grupo || null};
+    return {sample:false, movs:[], conceptos:[], recur:[], omit:{}, presup:[], metas:[], aportes:[], saldos:[], deleted:del, wipedAt:wiped, dirty:!!state.dirty, grupo:state.grupo || null};
   }
-  function emptyData(){ return {movs:[], conceptos:[], recur:[], omit:{}, presup:[], metas:[], aportes:[], deleted:{}, wipedAt:0, grupo:null}; }
-  function dataOf(s){ return {movs:s.movs, conceptos:s.conceptos, recur:s.recur || [], omit:s.omit || {}, presup:s.presup || [], metas:s.metas || [], aportes:s.aportes || [], deleted:s.deleted || {}, wipedAt:s.wipedAt || 0, grupo:s.grupo || null}; }
+  function emptyData(){ return {movs:[], conceptos:[], recur:[], omit:{}, presup:[], metas:[], aportes:[], saldos:[], deleted:{}, wipedAt:0, grupo:null}; }
+  function dataOf(s){ return {movs:s.movs, conceptos:s.conceptos, recur:s.recur || [], omit:s.omit || {}, presup:s.presup || [], metas:s.metas || [], aportes:s.aportes || [], saldos:s.saldos || [], deleted:s.deleted || {}, wipedAt:s.wipedAt || 0, grupo:s.grupo || null}; }
 
+  function paraLimpia(a){
+    var out = [], seen = {};
+    (Array.isArray(a) ? a : []).forEach(function(n){
+      n = clean(String(n == null ? '' : n)).slice(0, 40);
+      if(n && !seen[pkey(n)]){ seen[pkey(n)] = 1; out.push(n); }
+    });
+    return out.slice(0, 12);
+  }
   function sanitize(d){
     var o = emptyData();
     if(!d || typeof d !== 'object') return o;
     (Array.isArray(d.movs) ? d.movs : []).forEach(function(m){
       if(m && typeof m.id === 'string' && typeof m.persona === 'string' && (m.tipo === 'in' || m.tipo === 'out') && Number.isInteger(m.cents) && m.cents > 0 && typeof m.fecha === 'string'){
-        o.movs.push({id:m.id, persona:clean(m.persona), tipo:m.tipo, cents:m.cents, concepto:clean(m.concepto), fecha:m.fecha, ts:m.ts || 0, upd:m.upd || m.ts || 1, rev:+m.rev > 0 ? +m.rev : 0});
+        o.movs.push({id:m.id, persona:clean(m.persona), tipo:m.tipo, cents:m.cents, concepto:clean(m.concepto), fecha:m.fecha, para:paraLimpia(m.para), ts:m.ts || 0, upd:m.upd || m.ts || 1, rev:+m.rev > 0 ? +m.rev : 0});
       }
     });
     (Array.isArray(d.conceptos) ? d.conceptos : []).forEach(function(c){
@@ -1662,6 +1829,11 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     (Array.isArray(d.aportes) ? d.aportes : []).forEach(function(r){
       if(r && typeof r.id === 'string' && typeof r.meta === 'string' && Number.isInteger(r.cents) && r.cents > 0 && typeof r.fecha === 'string'){
         o.aportes.push({id:r.id, meta:r.meta, cents:r.cents, ret:!!r.ret, fecha:r.fecha, ts:r.ts || 0, upd:r.upd || r.ts || 1, rev:+r.rev > 0 ? +r.rev : 0});
+      }
+    });
+    (Array.isArray(d.saldos) ? d.saldos : []).forEach(function(r){
+      if(r && typeof r.id === 'string' && typeof r.de === 'string' && typeof r.a === 'string' && clean(r.de) && clean(r.a) && pkey(clean(r.de)) !== pkey(clean(r.a)) && Number.isInteger(r.cents) && r.cents > 0 && typeof r.fecha === 'string'){
+        o.saldos.push({id:r.id, de:clean(r.de).slice(0, 40), a:clean(r.a).slice(0, 40), cents:r.cents, fecha:r.fecha, ts:r.ts || 0, upd:r.upd || r.ts || 1, rev:+r.rev > 0 ? +r.rev : 0});
       }
     });
     if(d.omit && typeof d.omit === 'object') Object.keys(d.omit).forEach(function(k){ var v = +d.omit[k]; if(v > 0) o.omit[k] = v; });
@@ -1696,9 +1868,12 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     var metas = Object.keys(mm).map(function(k){ return mm[k]; }).filter(function(r){ return r.upd > wiped && !(del[r.id] >= r.upd); });
     var vivas = {}; metas.forEach(function(r){ vivas[r.id] = 1; });
     var aportes = Object.keys(am).map(function(k){ return am[k]; }).filter(function(r){ return r.upd > wiped && !(del[r.id] >= r.upd) && vivas[r.meta]; });
+    var sm = {};
+    (a.saldos || []).concat(b.saldos || []).forEach(function(r){ var p = sm[r.id]; if(!p || rv(r) > rv(p)) sm[r.id] = r; });
+    var saldos = Object.keys(sm).map(function(k){ return sm[k]; }).filter(function(r){ return r.upd > wiped && !(del[r.id] >= r.upd); });
     var omit = {};
     [a.omit || {}, b.omit || {}].forEach(function(o){ Object.keys(o).forEach(function(k){ if(o[k] > wiped && !(omit[k] >= o[k])) omit[k] = o[k]; }); });
-    return {movs:movs, conceptos:conceptos, recur:recur, omit:omit, presup:presup, metas:metas, aportes:aportes, deleted:del, wipedAt:wiped, grupo:grupo};
+    return {movs:movs, conceptos:conceptos, recur:recur, omit:omit, presup:presup, metas:metas, aportes:aportes, saldos:saldos, deleted:del, wipedAt:wiped, grupo:grupo};
   }
 
   // Forma canónica para saber si hay algo nuevo que escribir en el Gist.
@@ -1710,6 +1885,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     s.presup.sort(function(x, y){ return x.id < y.id ? -1 : 1; });
     s.metas.sort(function(x, y){ return x.id < y.id ? -1 : 1; });
     s.aportes.sort(function(x, y){ return x.id < y.id ? -1 : 1; });
+    s.saldos.sort(function(x, y){ return x.id < y.id ? -1 : 1; });
     var ok = {}; Object.keys(s.omit).sort().forEach(function(k){ ok[k] = s.omit[k]; }); s.omit = ok;
     var dk = {}; Object.keys(s.deleted).sort().forEach(function(k){ dk[k] = s.deleted[k]; }); s.deleted = dk;
     return JSON.stringify(s);
@@ -1725,7 +1901,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   }
   function fileBody(d){
     var files = {};
-    files[GFILE] = {content: JSON.stringify({version:1, updatedAt:new Date().toISOString(), movs:d.movs, conceptos:d.conceptos, recur:d.recur || [], omit:d.omit || {}, presup:d.presup || [], metas:d.metas || [], aportes:d.aportes || [], deleted:d.deleted, wipedAt:d.wipedAt, grupo:d.grupo || null})};
+    files[GFILE] = {content: JSON.stringify({version:1, updatedAt:new Date().toISOString(), movs:d.movs, conceptos:d.conceptos, recur:d.recur || [], omit:d.omit || {}, presup:d.presup || [], metas:d.metas || [], aportes:d.aportes || [], saldos:d.saldos || [], deleted:d.deleted, wipedAt:d.wipedAt, grupo:d.grupo || null})};
     return files;
   }
   function readGist(){
@@ -1751,7 +1927,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       seq0 = S.seq;
       if(!(state.sample && !merged.movs.length && !merged.conceptos.length)){
         var changed = state.sample || canon(merged) !== canon(dataOf(state));
-        state.sample = false; state.movs = merged.movs; state.conceptos = merged.conceptos; state.deleted = merged.deleted; state.wipedAt = merged.wipedAt; state.grupo = merged.grupo; state.recur = merged.recur; state.omit = merged.omit; state.presup = merged.presup; state.metas = merged.metas; state.aportes = merged.aportes;
+        state.sample = false; state.movs = merged.movs; state.conceptos = merged.conceptos; state.deleted = merged.deleted; state.wipedAt = merged.wipedAt; state.grupo = merged.grupo; state.recur = merged.recur; state.omit = merged.omit; state.presup = merged.presup; state.metas = merged.metas; state.aportes = merged.aportes; state.saldos = merged.saldos;
         save(); if(changed) render();
       }
       if(canon(merged) !== before) return writeGist(merged);
