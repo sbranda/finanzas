@@ -521,6 +521,21 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     </div>
   </details>
 
+  <details class="card rec" id="expDet">
+    <summary>Exportar a Excel o CSV</summary>
+    <p class="rec-hint">Descargá tus movimientos para llevarlos a una planilla o a tu contador. El Excel trae además resúmenes por cuenta, por mes y por concepto. El CSV trae solo los movimientos.</p>
+    <form class="rec-form" id="expForm" novalidate>
+      <div class="field"><label for="xPer">Período</label><select id="xPer"></select></div>
+      <div class="field"><label for="xCuenta" id="xCuentaL">Cuenta</label><select id="xCuenta"></select></div>
+      <div class="field" id="xDesdeF" hidden><label for="xDesde">Desde</label><input type="date" id="xDesde"></div>
+      <div class="field" id="xHastaF" hidden><label for="xHasta">Hasta</label><input type="date" id="xHasta"></div>
+      <div class="field wide"><label for="xFmt">Formato</label><select id="xFmt"><option value="xlsx">Excel (.xlsx) con resúmenes</option><option value="csv">CSV (para cualquier planilla)</option></select></div>
+      <p class="rec-hint wide" id="xSum" aria-live="polite" style="grid-column:1/-1"></p>
+      <p class="msg err wide" id="xMsg" role="alert" style="grid-column:1/-1"></p>
+      <div class="actions wide" style="grid-column:1/-1"><button class="btn" type="submit" id="xGo">Descargar</button></div>
+    </form>
+  </details>
+
   <details class="card" id="lockDet">
     <summary id="lockSum">Seguridad: PIN y huella</summary>
     <div class="inner sec" id="secBox"></div>
@@ -713,6 +728,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     renderDeudas();
     renderPara(gs);
     renderUsd(t);
+    renderExp(gs);
     animateTotal(t.saldo);
     $('totIn').textContent = money(t.ing);
     $('totOut').textContent = money(t.egr);
@@ -2156,6 +2172,159 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   window.addEventListener('online', function(){ syncNow(); });
   window.addEventListener('offline', renderSync);
   setInterval(function(){ if(!document.hidden) syncNow(); }, 60000);
+
+  // ---------- Exportar a Excel (.xlsx) o CSV ----------
+  var xf = {per:'all', cuenta:'all', desde:'', hasta:'', fmt:'xlsx'};
+  function xRango(){
+    var hoy = today(0), y = hoy.slice(0, 4);
+    if(xf.per === 'mes'){ var k = mesPres(); return {d:k + '-01', h:k + '-31'}; }
+    if(xf.per === 'anio') return {d:y + '-01-01', h:y + '-12-31'};
+    if(xf.per === 'rango') return {d:xf.desde || '', h:xf.hasta || ''};
+    return {d:'', h:''};
+  }
+  function xMovs(){
+    var r = xRango();
+    return state.movs.filter(function(m){
+      if(xf.cuenta !== 'all' && pkey(m.persona) !== xf.cuenta) return false;
+      if(r.d && m.fecha < r.d) return false;
+      if(r.h && m.fecha > r.h) return false;
+      return true;
+    }).sort(function(a, b){ return a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : a.ts - b.ts; });
+  }
+  function renderExp(gs){
+    var per = $('xPer'); per.textContent = '';
+    [['all','Todo el historial'],['mes','Mes elegido arriba (' + cap(mesLabel(mesPres())) + ')'],['anio','Este año (' + today(0).slice(0, 4) + ')'],['rango','Entre fechas…']].forEach(function(o){ per.appendChild(h('option',{value:o[0],text:o[1]})); });
+    per.value = xf.per;
+    if(xf.cuenta !== 'all' && !gs.some(function(g){ return g.key === xf.cuenta; })) xf.cuenta = 'all';
+    var sc = $('xCuenta'); sc.textContent = ''; sc.appendChild(h('option',{value:'all',text:'Todas'}));
+    gs.forEach(function(g){ sc.appendChild(h('option',{value:g.key,text:g.name})); });
+    sc.value = xf.cuenta; $('xCuentaL').textContent = gname();
+    $('xDesdeF').hidden = $('xHastaF').hidden = xf.per !== 'rango';
+    $('xFmt').value = xf.fmt;
+    var ms = xMovs(), ing = 0, egr = 0;
+    ms.forEach(function(m){ if(m.tipo === 'in') ing += m.cents; else egr += m.cents; });
+    var rg = xRango();
+    $('xSum').textContent = (rg.d && rg.h && rg.d > rg.h) ? 'La fecha "Desde" es posterior a "Hasta".' : ms.length ? ms.length + (ms.length === 1 ? ' movimiento' : ' movimientos') + ' · Ingresos ' + money(ing) + ' · Egresos ' + money(egr) + ' · Saldo ' + money(ing - egr) : 'No hay movimientos para ese período y cuenta.';
+    $('xGo').disabled = !ms.length;
+  }
+  $('xPer').addEventListener('change', function(){ xf.per = this.value; renderExp(groups()); });
+  $('xCuenta').addEventListener('change', function(){ xf.cuenta = this.value; renderExp(groups()); });
+  $('xDesde').addEventListener('change', function(){ xf.desde = this.value; renderExp(groups()); });
+  $('xHasta').addEventListener('change', function(){ xf.hasta = this.value; renderExp(groups()); });
+  $('xFmt').addEventListener('change', function(){ xf.fmt = this.value; });
+
+  function num2(c){ return Number((c / 100).toFixed(2)); }
+  function movFila(m){
+    return [{d:m.fecha}, m.persona, m.tipo === 'in' ? 'Ingreso' : 'Egreso', m.concepto || '', num2(m.cents), num2(m.tipo === 'in' ? m.cents : -m.cents),
+      m.mon === 'USD' ? 'USD' : 'ARS', num2(m.mon === 'USD' ? m.usd : m.cents), m.mon === 'USD' ? num2(m.tc) : '', (m.para || []).join(', ')];
+  }
+  var X_HEAD = ['Fecha','Cuenta','Tipo','Concepto','Monto (ARS)','Importe con signo (ARS)','Moneda original','Monto original','Cotización (ARS por US$)','Pagado para'];
+  function xHojas(ms){
+    var porCta = {}, porMes = {}, porCon = {}, ordenCta = [];
+    ms.forEach(function(m){
+      var k = pkey(m.persona), a = porCta[k] || (porCta[k] = {n:m.persona, i:0, e:0}); if(!porCta[k].n) porCta[k].n = m.persona;
+      var mk = monthKey(m.fecha), b = porMes[mk] || (porMes[mk] = {i:0, e:0});
+      var ck = m.tipo + '|' + pkey(m.concepto || ''), c = porCon[ck] || (porCon[ck] = {t:m.tipo, n:m.concepto || 'Sin concepto', q:0, v:0});
+      if(m.tipo === 'in'){ a.i += m.cents; b.i += m.cents; } else { a.e += m.cents; b.e += m.cents; }
+      c.q++; c.v += m.cents;
+    });
+    var hojas = [{name:'Movimientos', head:X_HEAD, rows:ms.map(movFila), widths:[12,18,10,28,16,22,16,16,22,24], filtro:true}];
+    var ci = 0, ce = 0;
+    var rc = Object.keys(porCta).sort(function(x, y){ return porCta[x].n.localeCompare(porCta[y].n, 'es'); }).map(function(k){ var a = porCta[k]; ci += a.i; ce += a.e; return [a.n, num2(a.i), num2(a.e), num2(a.i - a.e)]; });
+    rc.push(['TOTAL', num2(ci), num2(ce), num2(ci - ce)]);
+    hojas.push({name:'Por cuenta', head:[gname(), 'Ingresos (ARS)', 'Egresos (ARS)', 'Saldo (ARS)'], rows:rc, widths:[24,18,18,18]});
+    var acum = 0;
+    var rm = Object.keys(porMes).sort().map(function(k){ var b = porMes[k]; acum += b.i - b.e; return [k === '0000-00' ? 'Sin fecha' : k, num2(b.i), num2(b.e), num2(b.i - b.e), num2(acum)]; });
+    hojas.push({name:'Por mes', head:['Mes', 'Ingresos (ARS)', 'Egresos (ARS)', 'Saldo del mes (ARS)', 'Saldo acumulado (ARS)'], rows:rm, widths:[12,18,18,20,22]});
+    var rk = Object.keys(porCon).sort(function(x, y){ var a = porCon[x], b = porCon[y]; return a.t === b.t ? b.v - a.v : (a.t === 'out' ? -1 : 1); }).map(function(k){ var c = porCon[k]; return [c.t === 'in' ? 'Ingreso' : 'Egreso', c.n, {i:c.q}, num2(c.v)]; });
+    hojas.push({name:'Por concepto', head:['Tipo', 'Concepto', 'Cantidad', 'Total (ARS)'], rows:rk, widths:[10,30,10,18]});
+    var ds = calcDeudas();
+    if(ds.length) hojas.push({name:'Entre personas', head:['Debe', 'A', 'Monto (ARS)'], rows:ds.map(function(d){ return [d.deudor, d.acreedor, num2(d.cents)]; }), widths:[22,22,18]});
+    return hojas;
+  }
+  function xmlEsc(t){ return String(t).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function colName(i){ var s = ''; i++; while(i > 0){ var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
+  function serialFecha(f){ var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(f); return m ? Math.round(Date.UTC(+m[1], +m[2] - 1, +m[3]) / 86400000) + 25569 : null; }
+  function xCell(r, c, x, hdr){
+    if(x === '' || x == null) return '';
+    var ref = colName(c) + (r + 1);
+    var str = function(t, st){ return '<c r="' + ref + '" t="inlineStr"' + (st ? ' s="' + st + '"' : '') + '><is><t xml:space="preserve">' + xmlEsc(t) + '</t></is></c>'; };
+    if(hdr) return str(x, 3);
+    if(typeof x === 'string') return str(x);
+    if(x.d !== undefined){ var n = serialFecha(x.d); return n == null ? str(x.d) : '<c r="' + ref + '" s="1"><v>' + n + '</v></c>'; }
+    if(x.i !== undefined) return '<c r="' + ref + '"><v>' + x.i + '</v></c>';
+    return '<c r="' + ref + '" s="2"><v>' + x + '</v></c>';
+  }
+  function xSheetXml(sh){
+    var all = [sh.head].concat(sh.rows), nc = sh.head.length;
+    var rows = all.map(function(row, r){ return '<row r="' + (r + 1) + '">' + row.map(function(x, c){ return xCell(r, c, x, r === 0); }).join('') + '</row>'; }).join('');
+    var cols = '<cols>' + sh.widths.map(function(w, i){ return '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>'; }).join('') + '</cols>';
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:' + colName(nc - 1) + all.length + '"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' + cols + '<sheetData>' + rows + '</sheetData>' + (sh.filtro ? '<autoFilter ref="A1:' + colName(nc - 1) + all.length + '"/>' : '') + '</worksheet>';
+  }
+  var crcT = null;
+  function crc32(u8){
+    if(!crcT){ crcT = new Uint32Array(256); for(var n = 0; n < 256; n++){ var c = n; for(var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); crcT[n] = c >>> 0; } }
+    var c2 = 0xFFFFFFFF; for(var i = 0; i < u8.length; i++) c2 = crcT[(c2 ^ u8[i]) & 255] ^ (c2 >>> 8);
+    return (c2 ^ 0xFFFFFFFF) >>> 0;
+  }
+  function zipStore(files, mime){
+    var enc = new TextEncoder(), parts = [], cd = [], off = 0, now = new Date();
+    var dd = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate(), tm = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+    files.forEach(function(f){
+      var nb = enc.encode(f.name), len = f.data.length, crc = crc32(f.data), hd = new DataView(new ArrayBuffer(30));
+      hd.setUint32(0, 0x04034b50, true); hd.setUint16(4, 20, true); hd.setUint16(6, 0x0800, true); hd.setUint16(8, 0, true); hd.setUint16(10, tm, true); hd.setUint16(12, dd, true);
+      hd.setUint32(14, crc, true); hd.setUint32(18, len, true); hd.setUint32(22, len, true); hd.setUint16(26, nb.length, true); hd.setUint16(28, 0, true);
+      parts.push(new Uint8Array(hd.buffer), nb, f.data);
+      var c = new DataView(new ArrayBuffer(46));
+      c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true); c.setUint16(10, 0, true); c.setUint16(12, tm, true); c.setUint16(14, dd, true);
+      c.setUint32(16, crc, true); c.setUint32(20, len, true); c.setUint32(24, len, true); c.setUint16(28, nb.length, true); c.setUint32(42, off, true);
+      cd.push(new Uint8Array(c.buffer), nb); off += 30 + nb.length + len;
+    });
+    var cdSize = 0; cd.forEach(function(u){ cdSize += u.length; });
+    var end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true); end.setUint32(12, cdSize, true); end.setUint32(16, off, true);
+    return new Blob(parts.concat(cd, [new Uint8Array(end.buffer)]), {type:mime});
+  }
+  function buildXlsx(ms){
+    var enc = new TextEncoder(), hojas = xHojas(ms), X = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+    var files = [
+      {name:'[Content_Types].xml', text:X + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' + hojas.map(function(_, i){ return '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'; }).join('') + '</Types>'},
+      {name:'_rels/.rels', text:X + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'},
+      {name:'xl/workbook.xml', text:X + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' + hojas.map(function(sh, i){ return '<sheet name="' + xmlEsc(sh.name) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>'; }).join('') + '</sheets></workbook>'},
+      {name:'xl/_rels/workbook.xml.rels', text:X + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + hojas.map(function(_, i){ return '<Relationship Id="rId' + (i + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>'; }).join('') + '<Relationship Id="rId' + (hojas.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'},
+      {name:'xl/styles.xml', text:X + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy\\-mm\\-dd"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'}
+    ];
+    hojas.forEach(function(sh, i){ files.push({name:'xl/worksheets/sheet' + (i + 1) + '.xml', text:xSheetXml(sh)}); });
+    files.forEach(function(f){ f.data = enc.encode(f.text); });
+    return zipStore(files, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  }
+  function csvNum(n){ return String(n).replace('.', ','); }
+  function buildCsv(ms){
+    var q = function(t){ t = String(t); return /[;"\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+    var lines = [X_HEAD.map(q).join(';')];
+    ms.forEach(function(m){
+      lines.push(movFila(m).map(function(x, i){ return x && x.d !== undefined ? x.d : (typeof x === 'number' ? csvNum(x) : q(x)); }).join(';'));
+    });
+    return new Blob(['﻿' + lines.join('\r\n') + '\r\n'], {type:'text/csv;charset=utf-8'});
+  }
+  function bajar(blob, nombre){
+    var a = h('a',{href:URL.createObjectURL(blob), download:nombre});
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  }
+  $('expForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    var m = $('xMsg'); m.textContent = '';
+    var r = xRango();
+    if(xf.per === 'rango' && r.d && r.h && r.d > r.h){ m.textContent = 'La fecha "Desde" es posterior a "Hasta".'; return; }
+    var ms = xMovs();
+    if(!ms.length){ m.textContent = 'No hay movimientos para exportar.'; return; }
+    var nombre = 'cuentas-' + today(0);
+    try{
+      if(xf.fmt === 'csv') bajar(buildCsv(ms), nombre + '.csv'); else bajar(buildXlsx(ms), nombre + '.xlsx');
+      setMsg('Se descargó ' + nombre + '.' + xf.fmt + ' con ' + ms.length + (ms.length === 1 ? ' movimiento.' : ' movimientos.'));
+    }catch(err){ m.textContent = 'No se pudo generar el archivo en este navegador.'; }
+  });
 
   // ---------- Bloqueo con PIN y huella ----------
   // Pantalla de bloqueo para que otra persona que use el dispositivo no vea tus cuentas. Es local de cada dispositivo
