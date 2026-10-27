@@ -134,6 +134,11 @@ details p{margin:0;font-size:13px;color:var(--muted)}
 textarea{font-family:var(--font-num);font-size:13px;min-height:90px;resize:vertical}
 .actions{display:flex;flex-wrap:wrap;gap:8px}
 .auth{display:grid;gap:12px}
+.enc{display:grid;gap:10px;border-top:1px solid var(--line,#ddd);padding-top:12px;margin-top:4px}
+.enc h3{margin:0;font-size:15px}
+.enc p{margin:0;font-size:13px;color:var(--muted)}
+.chk{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--muted)}
+.chk input{margin-top:3px;flex:none}
 .sstate{font-weight:500;font-size:13px;color:var(--muted);margin-left:6px}
 .sstate.ok{color:var(--in)}
 .p-tools{display:flex;align-items:center;gap:8px;padding:8px 16px;border-top:1px solid var(--line)}
@@ -501,6 +506,27 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
         <div class="actions">
           <button class="btn" type="button" id="ghNow">Sincronizar ahora</button>
           <button class="btn ghost" type="button" id="ghOff">Desconectar</button>
+        </div>
+        <div id="encBox" class="enc">
+          <h3>Cifrado con tu clave</h3>
+          <p id="encInfo"></p>
+          <form id="encUnlock" class="auth" novalidate hidden>
+            <div class="field"><label for="encKey">Clave de cifrado</label><input type="password" id="encKey" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+            <div class="actions"><button class="btn" type="submit">Descifrar</button></div>
+          </form>
+          <form id="encForm" class="auth" novalidate hidden>
+            <div class="field"><label for="encP1">Clave (mínimo 8 caracteres)</label><input type="password" id="encP1" autocomplete="new-password" autocapitalize="off" spellcheck="false"></div>
+            <div class="field"><label for="encP2">Repetir la clave</label><input type="password" id="encP2" autocomplete="new-password" autocapitalize="off" spellcheck="false"></div>
+            <label class="chk"><input type="checkbox" id="encRepl" checked> <span>Reemplazar el Gist por uno nuevo y borrar el anterior (recomendado: el viejo conserva versiones anteriores sin cifrar)</span></label>
+            <div class="actions">
+              <button class="btn" type="submit" id="encGo">Activar cifrado</button>
+              <button class="btn ghost" type="button" id="encCancel">Cancelar</button>
+            </div>
+          </form>
+          <div id="encActs" class="actions">
+            <button class="btn" type="button" id="encOpen">Activar cifrado…</button>
+            <button class="btn ghost" type="button" id="encOff" hidden>Quitar cifrado</button>
+          </div>
         </div>
       </div>
       <p id="syncMsg" role="status"></p>
@@ -2048,31 +2074,87 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     if(body) h['Content-Type'] = 'application/json';
     return fetch(GH + path, {method:method || 'GET', headers:h, body: body ? JSON.stringify(body) : undefined, cache:'no-store'}).then(function(r){
       if(!r.ok){ var e = new Error('http ' + r.status); e.status = r.status; throw e; }
-      return r.json();
+      return r.status === 204 ? null : r.json();
     });
   }
-  function fileBody(d){
-    var files = {};
-    files[GFILE] = {content: JSON.stringify({version:1, updatedAt:new Date().toISOString(), movs:d.movs, conceptos:d.conceptos, recur:d.recur || [], omit:d.omit || {}, presup:d.presup || [], metas:d.metas || [], aportes:d.aportes || [], saldos:d.saldos || [], deleted:d.deleted, wipedAt:d.wipedAt, grupo:d.grupo || null, cot:d.cot || null})};
-    return files;
+  // ---------- Cifrado de los datos del Gist (opcional, con una clave propia) ----------
+  // La clave nunca sale del dispositivo. De la frase se deriva una clave AES-256-GCM con PBKDF2-SHA256; el Gist
+  // guarda solo "sal", "iv" y el texto cifrado. El archivo empieza con una marca que no es JSON: una versión
+  // vieja de la app lo toma por corrupto y no lo toca (así nunca lo pisa con datos sin cifrar).
+  var EKEY = 'cuentas-enc-v1', MAGIC = 'CUENTAS-CIFRADO-V1', E_IT = 250000;
+  var enc = null;
+  try{ enc = JSON.parse(localStorage.getItem(EKEY) || 'null'); if(!enc || !enc.pass || !enc.salt) enc = null; }catch(e){ enc = null; }
+  function saveEnc(){ try{ if(enc) localStorage.setItem(EKEY, JSON.stringify(enc)); else localStorage.removeItem(EKEY); }catch(e){} }
+  var keyCache = {};
+  function getKey(pass, salt, it){
+    var id = it + '|' + salt + '|' + pass;
+    if(!keyCache[id]){
+      keyCache[id] = crypto.subtle.importKey('raw', new TextEncoder().encode(pass.normalize('NFC')), 'PBKDF2', false, ['deriveKey']).then(function(k){
+        return crypto.subtle.deriveKey({name:'PBKDF2', salt:unb64(salt), iterations:it, hash:'SHA-256'}, k, {name:'AES-GCM', length:256}, false, ['encrypt', 'decrypt']);
+      });
+      keyCache[id].catch(function(){ delete keyCache[id]; });
+    }
+    return keyCache[id];
   }
-  function readGist(){
-    return gh('/gists/' + cfg.gistId).then(function(g){
+  function sErr(code){ var er = new Error(code); er.status = code; return er; }
+  function encryptText(txt, e){
+    var iv = randBytes(12);
+    return getKey(e.pass, e.salt, E_IT).then(function(key){
+      return crypto.subtle.encrypt({name:'AES-GCM', iv:iv, additionalData:new TextEncoder().encode(MAGIC)}, key, new TextEncoder().encode(txt));
+    }).then(function(ct){
+      return MAGIC + '\n' + JSON.stringify({v:1, alg:'AES-256-GCM', kdf:'PBKDF2-SHA256', it:E_IT, salt:e.salt, iv:b64(iv), ct:b64(new Uint8Array(ct))});
+    });
+  }
+  function decryptText(t, pass){
+    var env;
+    try{ env = JSON.parse(t.slice(MAGIC.length)); }catch(e){ throw sErr('corrupto'); }
+    if(!env || env.v !== 1 || typeof env.salt !== 'string' || typeof env.iv !== 'string' || typeof env.ct !== 'string' || !(env.it >= 100000 && env.it <= 2000000)) throw sErr('corrupto');
+    var iv, ct;
+    try{ iv = unb64(env.iv); ct = unb64(env.ct); unb64(env.salt); }catch(e){ throw sErr('corrupto'); }
+    return getKey(pass, env.salt, env.it).then(function(key){
+      return crypto.subtle.decrypt({name:'AES-GCM', iv:iv, additionalData:new TextEncoder().encode(MAGIC)}, key, ct);
+    }).then(function(pt){ return {text:new TextDecoder().decode(pt), salt:env.salt}; }, function(){ throw sErr('clavemala'); });
+  }
+  function plainText(d){
+    return JSON.stringify({version:1, updatedAt:new Date().toISOString(), movs:d.movs, conceptos:d.conceptos, recur:d.recur || [], omit:d.omit || {}, presup:d.presup || [], metas:d.metas || [], aportes:d.aportes || [], saldos:d.saldos || [], deleted:d.deleted, wipedAt:d.wipedAt, grupo:d.grupo || null, cot:d.cot || null});
+  }
+  // e: null = texto plano; objeto {pass, salt} = cifrado.
+  function fileBody(d, e){
+    var txt = plainText(d);
+    return (e ? encryptText(txt, e) : Promise.resolve(txt)).then(function(c){ var files = {}; files[GFILE] = {content:c}; return files; });
+  }
+  function readGist(pass, id){
+    return gh('/gists/' + (id || cfg.gistId)).then(function(g){
       var f = g.files && g.files[GFILE];
       if(!f) return null; // archivo borrado del Gist: se vuelve a crear al escribir
       var txt = f.truncated && f.raw_url ? fetch(f.raw_url, {cache:'no-store'}).then(function(r){ return r.text(); }) : Promise.resolve(f.content);
-      return txt.then(function(t){ try{ return JSON.parse(t); }catch(e){ var er = new Error('corrupto'); er.status = 'corrupto'; throw er; } });
+      return txt.then(function(t){
+        function parse(x){ try{ return JSON.parse(x); }catch(e){ throw sErr('corrupto'); } }
+        if(typeof t === 'string' && t.indexOf(MAGIC) === 0){
+          var p = pass || (enc && enc.pass);
+          if(!p) throw sErr('clave');
+          if(!cryptoOk) throw sErr('nocrypto');
+          return decryptText(t, p).then(function(r){ return {obj:parse(r.text), encrypted:true, salt:r.salt}; });
+        }
+        return {obj:parse(t), encrypted:false};
+      });
     });
   }
-  function writeGist(d){ return gh('/gists/' + cfg.gistId, 'PATCH', {files:fileBody(d)}); }
+  function writeGist(d, e){ return fileBody(d, e).then(function(files){ return gh('/gists/' + cfg.gistId, 'PATCH', {files:files}); }); }
 
-  function syncNow(){
+  function syncNow(){ return runSync({}); }
+  // opt.enc: con quién se escribe (null = texto plano); opt.force: escribir aunque no haya cambios;
+  // opt.pass: clave con que leer; opt.unlock: guardar esa clave si descifra; opt.after(merged): paso extra tras escribir.
+  function runSync(opt){
     if(!cfg) return Promise.resolve();
     if(S.busy){ S.again = true; return Promise.resolve(); }
     if(navigator.onLine === false){ S.err = 'offline'; renderSync(); return Promise.resolve(); }
     S.busy = true; S.err = ''; renderSync();
     var seq0 = 0;
-    return readGist().then(function(remote){
+    return readGist(opt.pass).then(function(rr){
+      var remote = rr ? rr.obj : null, encW = ('enc' in opt) ? opt.enc : enc;
+      if(rr && rr.encrypted && opt.unlock){ enc = {pass:opt.pass, salt:rr.salt}; saveEnc(); encW = enc; }
+      if(rr && !rr.encrypted && enc && !('enc' in opt)){ enc = null; saveEnc(); encW = null; S.note = 'El cifrado se quitó desde otro dispositivo: este también quedó sin cifrar.'; }
       var r = sanitize(remote), before = canon(r);
       // La unión se calcula con lo que hay ahora en pantalla, para no perder lo cargado durante la espera.
       var merged = mergeStates(sanitize(state.sample ? Object.assign(emptyData(), {grupo:state.grupo || null, cot:state.cot || null}) : dataOf(state)), r);
@@ -2082,14 +2164,18 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
         state.sample = false; state.movs = merged.movs; state.conceptos = merged.conceptos; state.deleted = merged.deleted; state.wipedAt = merged.wipedAt; state.grupo = merged.grupo; state.recur = merged.recur; state.omit = merged.omit; state.presup = merged.presup; state.metas = merged.metas; state.aportes = merged.aportes; state.saldos = merged.saldos; state.cot = merged.cot;
         save(); if(changed) render();
       }
-      if(canon(merged) !== before) return writeGist(merged);
+      if(opt.force || canon(merged) !== before) return writeGist(merged, encW).then(function(){ return opt.after ? opt.after(merged) : null; });
+      return opt.after ? opt.after(merged) : null;
     }).then(function(){
       if(S.seq === seq0){ state.dirty = false; save(); }
       S.last = Date.now(); S.err = '';
     }).catch(function(e){
       S.err = e && e.status ? String(e.status) : 'red';
+      // El Gist ya no existe (p. ej. otro dispositivo lo reemplazó por uno cifrado nuevo): buscar el vigente.
+      if(S.err === '404' && cfg) return findGist().then(function(id){ if(id && id !== cfg.gistId){ cfg.gistId = id; saveCfg(); S.again = true; } }).catch(function(){});
     }).then(function(){
       S.busy = false; renderSync();
+      if(S.note){ smsg(S.note); S.note = ''; }
       if(S.again){ S.again = false; scheduleSync(300); }
     });
   }
@@ -2102,6 +2188,11 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     if(code === '401') return 'El token no es válido o venció. Creá uno nuevo y volvé a conectar.';
     if(code === '403') return 'GitHub rechazó el acceso. Revisá que el token tenga el permiso gist; si hubo muchos pedidos, esperá un rato.';
     if(code === '404') return 'No se encontró el Gist, o el token no tiene el permiso gist.';
+    if(code === 'clave') return 'Los datos del Gist están cifrados. Ingresá la clave en este dispositivo para leerlos (más abajo).';
+    if(code === 'clavemala') return 'La clave no coincide con la del Gist. Revisala o ingresá la nueva si la cambiaste en otro dispositivo.';
+    if(code === 'verif') return 'No se pudo comprobar el cifrado, así que el Gist quedó como estaba (sin cifrar). Probá de nuevo.';
+    if(code === 'borrar') return 'El cifrado quedó activado, pero no se pudo borrar el Gist anterior (con el historial sin cifrar). Se mantiene el actual; borralo a mano desde gist.github.com.';
+    if(code === 'nocrypto') return 'Este navegador no permite descifrar acá (hace falta abrir la app desde https).';
     if(code === 'corrupto') return 'El archivo del Gist no tiene un formato válido. No se tocó para no perder datos.';
     if(code === 'offline' || code === 'red') return 'Sin conexión con GitHub. Se reintenta solo.';
     return 'GitHub devolvió un error (' + code + ').';
@@ -2118,9 +2209,12 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     }
     return next();
   }
-  function createGist(){
-    var d = state.sample ? emptyData() : dataOf(state);
-    return gh('/gists', 'POST', {description:'Cuentas por Persona (datos de la app, no borrar)', public:false, files:fileBody(d)}).then(function(g){ return g.id; });
+  function createGist(e, d){
+    d = d || (state.sample ? emptyData() : dataOf(state));
+    if(e === undefined) e = enc;
+    return fileBody(d, e).then(function(files){
+      return gh('/gists', 'POST', {description:'Cuentas por Persona (datos de la app, no borrar)', public:false, files:files});
+    }).then(function(g){ return g.id; });
   }
   function connect(token){
     token = clean(token);
@@ -2143,6 +2237,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       text = 'Creá un token de GitHub con el permiso gist y pegalo en cada dispositivo. Los datos se guardan en un Gist secreto de tu cuenta (' + GFILE + ') y los cambios de todos los dispositivos se unen sin pisarse. El token queda solo en este dispositivo.';
     } else {
       if(S.busy){ txt = 'sincronizando…'; }
+      else if(S.err === 'clave' || S.err === 'clavemala'){ txt = 'falta la clave'; }
       else if(S.err){ txt = (S.err === 'offline' || S.err === 'red') ? 'sin conexión, pendiente' : 'con error'; }
       else if(state.dirty){ txt = 'pendiente'; }
       else if(S.last){ txt = 'sincronizado'; cls = 'ok'; }
@@ -2158,10 +2253,74 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     if(on){
       $('ghUser').textContent = cfg.login || 'GitHub';
       $('ghGist').textContent = '…' + String(cfg.gistId).slice(-6);
+      renderEnc();
       $('ghLast').textContent = S.last ? 'Última sincronización: ' + new Date(S.last).toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit'}) : '';
     }
   }
 
+  function emsg(t, err){ smsg(t, err); }
+  function renderEnc(){
+    var locked = S.err === 'clave' || S.err === 'clavemala', ok = cryptoOk;
+    var info = $('encInfo');
+    $('encUnlock').hidden = !locked || !ok;
+    $('encForm').hidden = locked || !S.encOpen || !ok;
+    $('encActs').hidden = locked || !ok || !!S.encOpen;
+    $('encOpen').textContent = enc ? 'Cambiar clave…' : 'Activar cifrado…';
+    $('encOff').hidden = !enc;
+    $('encGo').disabled = !!S.busy;
+    if(!ok) info.textContent = 'Este navegador no permite cifrar acá (hace falta abrir la app desde una dirección https).';
+    else if(locked) info.textContent = 'Los datos del Gist están cifrados y este dispositivo no tiene la clave (o es otra). Ingresala para leer y sincronizar.';
+    else if(S.encOpen) info.textContent = 'La clave queda solo en tus dispositivos: no se sube a ningún lado. Si la olvidás, los datos del Gist no se pueden recuperar (los de cada dispositivo siguen ahí). Usá una frase larga: una clave corta se puede adivinar probando. Las demás tablets y celulares tienen que tener esta versión de la app y ingresar la misma clave.';
+    else if(enc) info.textContent = 'Activado: lo que se sube al Gist va cifrado. GitHub sigue viendo que existe el archivo, su tamaño y la fecha de cada cambio, pero no su contenido. La clave se guarda en este dispositivo.';
+    else info.textContent = 'Hoy los datos del Gist se guardan en texto legible: el Gist es secreto (solo se abre con el enlace) pero no privado. Podés cifrarlos con una clave propia.';
+  }
+  $('encOpen').addEventListener('click', function(){ S.encOpen = true; $('encP1').value = $('encP2').value = ''; smsg(''); renderEnc(); $('encP1').focus(); });
+  $('encCancel').addEventListener('click', function(){ S.encOpen = false; smsg(''); renderEnc(); });
+  $('encForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    var p1 = $('encP1').value, p2 = $('encP2').value;
+    if(p1.length < 8){ emsg('La clave tiene que tener al menos 8 caracteres.', true); return; }
+    if(p1 !== p2){ emsg('Las dos claves no coinciden.', true); return; }
+    if(S.busy){ emsg('Hay una sincronización en curso. Probá de nuevo en un momento.', true); return; }
+    var repl = $('encRepl').checked;
+    if(!confirm('Se va a cifrar el Gist con esta clave' + (repl ? ' y a borrar el Gist anterior' : '') + '. Anotá la clave en un lugar seguro: sin ella no se pueden recuperar los datos de la nube. ¿Seguir?')) return;
+    var ne = {pass:p1, salt:b64(randBytes(16))};
+    smsg('Cifrando… (puede tardar unos segundos)');
+    runSync({enc:ne, force:true, pass:p1, after:function(merged){
+      return readGist(ne.pass).then(function(v){
+        if(!v || !v.encrypted || canon(v.obj) !== canon(merged)) return writeGist(merged, null).then(function(){ throw sErr('verif'); });
+        enc = ne; saveEnc();
+        if(!repl) return;
+        var oldId = cfg.gistId, newId = '';
+        function bad(er){ return (newId ? gh('/gists/' + newId, 'DELETE').catch(function(){}) : Promise.resolve()).then(function(){ throw er; }); }
+        return createGist(ne, merged).then(function(id){ newId = id; return readGist(ne.pass, newId); }).then(function(v2){
+          if(!v2 || !v2.encrypted || canon(v2.obj) !== canon(merged)) throw sErr('verif');
+          return gh('/gists/' + oldId, 'DELETE').catch(function(){ throw sErr('borrar'); });
+        }).then(function(){ cfg.gistId = newId; saveCfg(); }, bad);
+      });
+    }}).then(function(){
+      if(!S.err){ S.encOpen = false; emsg('Cifrado activado. Ahora ingresá la misma clave en los demás dispositivos.'); } else smsg(ghMsg(S.err), true);
+      renderEnc();
+    });
+  });
+  $('encUnlock').addEventListener('submit', function(e){
+    e.preventDefault();
+    var p = $('encKey').value; if(!p) return;
+    if(S.busy){ emsg('Hay una sincronización en curso. Probá de nuevo en un momento.', true); return; }
+    smsg('Descifrando…');
+    runSync({pass:p, unlock:true}).then(function(){
+      if(!S.err){ $('encKey').value = ''; smsg(''); } else smsg(ghMsg(S.err), true);
+      renderEnc();
+    });
+  });
+  $('encOff').addEventListener('click', function(){
+    if(S.busy){ emsg('Hay una sincronización en curso. Probá de nuevo en un momento.', true); return; }
+    if(!confirm('Los datos del Gist van a quedar en texto legible otra vez. ¿Quitar el cifrado?')) return;
+    runSync({enc:null, force:true, after:function(){ enc = null; saveEnc(); }}).then(function(){
+      if(!S.err) emsg('Cifrado quitado. Los demás dispositivos lo notan en la próxima sincronización.'); else smsg(ghMsg(S.err), true);
+      renderEnc();
+    });
+  });
   $('ghForm').addEventListener('submit', function(e){ e.preventDefault(); connect($('ghToken').value); });
   $('ghNow').addEventListener('click', function(){ smsg(''); S.err = ''; syncNow(); });
   $('ghOff').addEventListener('click', function(){
