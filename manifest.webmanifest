@@ -1,6 +1,6 @@
 {
-  "name": "Mis Cuentas",
-  "short_name": "Mis Cuentas",
+  "name": "Todo en Orden",
+  "short_name": "Todo en Orden",
   "description": "Ingresos y egresos agrupados por persona, con saldo total en vivo.",
   "lang": "es-AR",
   "start_url": "./",
