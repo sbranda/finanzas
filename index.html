@@ -75,9 +75,9 @@ html:not(.notabs) #addBtn{position:sticky;bottom:calc(-16px - env(safe-area-inse
 @media (prefers-reduced-motion:reduce){html:not(.notabs) #f,#sheetBack,#toast{transition:none!important}}
 @keyframes sp-out{to{opacity:0;visibility:hidden}}
 /* Gráfico: un solo color para las barras (nada de rampa de valor), gris para "Otros", eje tenue */
-:root{--viz-1:#2a78d6;--viz-other:#898781;--viz-axis:#c3c2b7;--warn:#c27800}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--viz-1:#3987e5;--viz-axis:#383835;--warn:#e0a030}}
-:root[data-theme="dark"]{--viz-1:#3987e5;--viz-axis:#383835;--warn:#e0a030}
+:root{--c1:#2a78d6;--c2:#eb6834;--c3:#1baf7a;--c4:#eda100;--c5:#e87ba4;--c6:#008300;--c7:#6250d6;--viz-1:#2a78d6;--viz-other:#898781;--viz-axis:#c3c2b7;--warn:#c27800}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--c1:#3987e5;--c2:#d95926;--c3:#199e70;--c4:#c98500;--c5:#d55181;--c6:#008300;--c7:#9085e9;--viz-1:#3987e5;--viz-axis:#383835;--warn:#e0a030}}
+:root[data-theme="dark"]{--c1:#3987e5;--c2:#d95926;--c3:#199e70;--c4:#c98500;--c5:#d55181;--c6:#008300;--c7:#9085e9;--viz-1:#3987e5;--viz-axis:#383835;--warn:#e0a030}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 var(--font-body);padding-block:0 40px}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
@@ -200,6 +200,28 @@ textarea{font-family:var(--font-num);font-size:13px;min-height:90px;resize:verti
 .g-bar{height:14px;margin-top:6px;border-left:1px solid var(--viz-axis)}
 .g-bar i{display:block;height:100%;border-radius:0 4px 4px 0;background:var(--viz-1);transition:filter .12s}
 .g-bar i.o{background:var(--viz-other)}
+.g-bar i.in{background:var(--in)}
+.g-bar i.out{background:var(--out)}
+.g-bar.s{height:9px;margin-top:4px}
+.g-cap{margin:4px 0 0;font-size:12px;color:var(--muted)}
+.gastos{min-width:0}
+.g-viz{margin-top:12px}
+.g-viz svg{display:block;width:100%;height:auto;max-height:300px;overflow:visible}
+.g-viz text{font:inherit;font-size:10px;fill:var(--muted)}
+.g-viz .ctr{font-size:12px;fill:var(--ink);font-weight:600}
+.g-viz .hit{fill:transparent;cursor:default;outline:none}
+.g-viz .hit:hover,.g-viz .hit:focus-visible{fill:var(--ink);fill-opacity:.07}
+.g-viz .sl{stroke:var(--surface);stroke-width:2}
+.g-viz .sl:hover,.g-viz .sl:focus-visible{filter:brightness(1.12);outline:none}
+.g-leg{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0 0;font-size:12px;color:var(--muted)}
+.g-leg i,.g-sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.g-sw{flex:none;margin:0;align-self:center}
+.g-row.pie .g-line{grid-template-columns:auto minmax(0,1fr) auto 3.4ch}
+.g-forma{margin-top:0}
+.g-sel{contain:inline-size;display:flex;gap:8px;overflow-x:auto;margin:12px -16px 0;padding:2px 16px 6px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.g-sel::-webkit-scrollbar{display:none}
+.g-sel .chip{flex:none;white-space:nowrap;min-height:36px}
+.g-sel .chip[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .g-row:hover .g-bar i{filter:brightness(1.12)}
 .g-table{overflow-x:auto;margin-top:10px}
 .g-table table{width:100%;border-collapse:collapse;font-size:14px}
@@ -444,11 +466,14 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
 
   <section class="gastos card" aria-labelledby="gH">
     <div class="g-head"><h2 id="gH">Egresos por concepto</h2><span id="gMes" class="g-mes"></span></div>
+    <div class="g-sel" id="gSel" role="group" aria-label="Elegir datos"></div>
+    <div class="g-sel g-forma" id="gForma" role="group" aria-label="Elegir tipo de gráfico"></div>
     <div class="g-filters">
-      <div class="field"><label for="gCuenta" id="gCuentaL">Cuenta</label><select id="gCuenta"></select></div>
+      <div class="field" id="gCuentaBox"><label for="gCuenta" id="gCuentaL">Cuenta</label><select id="gCuenta"></select></div>
       <button class="btn ghost" type="button" id="gTabla" aria-pressed="false">Ver tabla</button>
     </div>
     <p id="gTotal" class="g-total"></p>
+    <div id="gViz" class="g-viz" hidden></div>
     <div id="gChart" class="g-chart" role="list" aria-label="Egresos por concepto, de mayor a menor"></div>
     <div id="gTable" class="g-table" hidden></div>
     <p id="gEmpty" class="g-empty" hidden>No hay egresos en este período. Cargá uno y el gráfico se arma solo.</p>
@@ -958,27 +983,114 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   // Barras horizontales de un solo color, de mayor a menor. Respeta el mes elegido arriba y filtra por cuenta.
   var cuentaSel = 'all', verTabla = false;
   function cap(t){ return t.charAt(0).toUpperCase() + t.slice(1); }
+  var gSel = 'out-c';
   function gastos(){
-    var map = {}, items = [], total = 0, n = 0;
+    var map = {}, items = [], total = 0, n = 0, tipo = gSel.slice(0, 2) === 'in' ? 'in' : 'out', porP = gSel.slice(-1) === 'p';
     state.movs.forEach(function(m){
-      if(m.tipo !== 'out' || !enMes(m)) return;
-      if(cuentaSel !== 'all' && pkey(m.persona) !== cuentaSel) return;
-      var k = pkey(m.concepto || ''), it = map[k];
-      if(!it){ it = map[k] = {name:m.concepto || 'Sin concepto', cents:0, n:0}; items.push(it); }
+      if(m.tipo !== tipo || !enMes(m)) return;
+      if(!porP && cuentaSel !== 'all' && pkey(m.persona) !== cuentaSel) return;
+      var k = porP ? pkey(m.persona) : pkey(m.concepto || ''), it = map[k];
+      if(!it){ it = map[k] = {name:porP ? m.persona : (m.concepto || 'Sin concepto'), cents:0, n:0}; items.push(it); }
       it.cents += m.cents; it.n++; total += m.cents; n++;
     });
     items.sort(function(a, b){ return b.cents - a.cents || a.name.localeCompare(b.name, 'es'); });
     return {items:items, total:total, n:n};
   }
+  // Mes a mes: ingresos y egresos de los últimos 6 meses (hasta el mes elegido, o hasta el actual).
+  function mensual(){
+    var ls = mesesLista().filter(function(k){ return k !== '0000-00'; }), fin = mesSel !== 'all' ? ls.indexOf(mesSel) : ls.indexOf(today(0).slice(0, 7));
+    if(fin < 0) fin = ls.length - 1;
+    var ms = ls.slice(Math.max(0, fin - 5), fin + 1), map = {}, items = [], total = 0, n = 0;
+    ms.forEach(function(k){ map[k] = {key:k, name:cap(mesLabel(k)), ing:0, egr:0, n:0}; items.push(map[k]); });
+    state.movs.forEach(function(m){
+      var it = map[monthKey(m.fecha)]; if(!it) return;
+      if(cuentaSel !== 'all' && pkey(m.persona) !== cuentaSel) return;
+      if(m.tipo === 'in') it.ing += m.cents; else it.egr += m.cents; it.n++; n++;
+    });
+    return {items:items, n:n};
+  }
+  var gForma = 'barras', SVGNS = 'http://www.w3.org/2000/svg';
+  var G_FORMAS = [['barras', 'Barras'], ['columnas', 'Columnas'], ['torta', 'Torta'], ['lineas', 'Líneas']];
+  function formaOk(f, esMes){ return f === 'barras' || (esMes ? (f === 'columnas' || f === 'lineas') : f === 'torta'); }
+  function sv(tag, a){ var e = document.createElementNS(SVGNS, tag); for(var k in a) e.setAttribute(k, a[k]); return e; }
+  function corto(c){ var v = c / 100; return '$ ' + (Math.abs(v) >= 1e6 ? (v / 1e6).toLocaleString('es-AR', {maximumFractionDigits:1}) + ' M' : Math.abs(v) >= 1e3 ? (v / 1e3).toLocaleString('es-AR', {maximumFractionDigits:1}) + ' mil' : Math.round(v).toLocaleString('es-AR')); }
+  function vinc(el, info){
+    el.addEventListener('pointermove', function(e){ if(e.pointerType !== 'touch') showTip(info, e.clientX, e.clientY); });
+    el.addEventListener('pointerleave', function(e){ if(e.pointerType !== 'touch') hideTip(); });
+    el.addEventListener('click', function(e){ showTip(info, e.clientX, e.clientY); e.stopPropagation(); });
+    el.addEventListener('focus', function(){ var r = el.getBoundingClientRect(); showTip(info, r.left + r.width / 2, r.top + r.height / 2); });
+    el.addEventListener('blur', hideTip);
+  }
+  function colorDe(it, i){ return it.other ? 'var(--viz-other)' : 'var(--c' + (i + 1) + ')'; }
+  // Torta: un anillo con porciones separadas por 2 px de fondo; la lista de abajo hace de leyenda.
+  function dibujaTorta(box, show, total, rotulo){
+    var svg = sv('svg', {viewBox:'0 0 200 200', role:'img', 'aria-label':rotulo + ': ' + show.map(function(it){ return it.name + ' ' + pctTxt(it.cents, total); }).join(', ')});
+    var R = 92, r = 54, cx = 100, cy = 100, a0 = -Math.PI / 2;
+    function pt(rad, a){ return (cx + rad * Math.cos(a)).toFixed(2) + ' ' + (cy + rad * Math.sin(a)).toFixed(2); }
+    show.forEach(function(it, i){
+      var f = it.cents / total, info = {name:it.name, cents:it.cents, n:it.n, pct:pctTxt(it.cents, total)}, el;
+      if(f >= 0.9999){
+        el = sv('path', {d:'M ' + pt(R, 0) + ' A ' + R + ' ' + R + ' 0 1 1 ' + pt(R, Math.PI) + ' A ' + R + ' ' + R + ' 0 1 1 ' + pt(R, 0) + ' L ' + pt(r, 0) + ' A ' + r + ' ' + r + ' 0 1 0 ' + pt(r, Math.PI) + ' A ' + r + ' ' + r + ' 0 1 0 ' + pt(r, 0) + ' Z', 'fill-rule':'evenodd'});
+      } else {
+        var a1 = a0 + f * 2 * Math.PI, big = f > 0.5 ? 1 : 0;
+        el = sv('path', {d:'M ' + pt(R, a0) + ' A ' + R + ' ' + R + ' 0 ' + big + ' 1 ' + pt(R, a1) + ' L ' + pt(r, a1) + ' A ' + r + ' ' + r + ' 0 ' + big + ' 0 ' + pt(r, a0) + ' Z'});
+        a0 = a1;
+      }
+      el.setAttribute('class', 'sl'); el.setAttribute('fill', colorDe(it, i)); el.setAttribute('tabindex', '0');
+      vinc(el, info); svg.appendChild(el);
+    });
+    var t1 = sv('text', {x:100, y:97, 'text-anchor':'middle', class:'ctr'}); t1.textContent = corto(total);
+    var t2 = sv('text', {x:100, y:111, 'text-anchor':'middle'}); t2.textContent = 'total';
+    svg.appendChild(t1); svg.appendChild(t2); box.appendChild(svg);
+  }
+  // Líneas / columnas para "Mes a mes": ingresos (verde) y egresos (rojo) por mes.
+  function dibujaSerie(box, items, modo){
+    var W = 320, H = 190, L = 44, Rr = 8, Tt = 10, B = 26, pw = W - L - Rr, ph = H - Tt - B;
+    var mx = items.reduce(function(a, x){ return Math.max(a, x.ing, x.egr); }, 0) || 1;
+    var svg = sv('svg', {viewBox:'0 0 ' + W + ' ' + H, role:'img', 'aria-label':'Ingresos y egresos por mes, ' + (modo === 'lineas' ? 'líneas' : 'columnas')});
+    [0, .5, 1].forEach(function(f){
+      var y = Tt + ph - ph * f;
+      svg.appendChild(sv('line', {x1:L, x2:W - Rr, y1:y, y2:y, stroke:'var(--viz-axis)', 'stroke-width':f === 0 ? 1 : .5, 'stroke-dasharray':f === 0 ? '' : '3 3'}));
+      var t = sv('text', {x:L - 5, y:y + 3, 'text-anchor':'end'}); t.textContent = corto(mx * f); svg.appendChild(t);
+    });
+    var n = items.length, step = pw / n;
+    function X(i){ return L + step * (i + .5); }
+    function Y(v){ return Tt + ph - ph * v / mx; }
+    items.forEach(function(it, i){
+      var t = sv('text', {x:X(i), y:H - 8, 'text-anchor':'middle'}); t.textContent = it.name.split(' ')[0].slice(0, 3) + ' ' + it.name.slice(-2); svg.appendChild(t);
+    });
+    if(modo === 'lineas'){
+      [['ing', 'var(--in)'], ['egr', 'var(--out)']].forEach(function(sr){
+        svg.appendChild(sv('polyline', {points:items.map(function(it, i){ return X(i).toFixed(1) + ',' + Y(it[sr[0]]).toFixed(1); }).join(' '), fill:'none', stroke:sr[1], 'stroke-width':2, 'stroke-linejoin':'round', 'stroke-linecap':'round'}));
+        items.forEach(function(it, i){ svg.appendChild(sv('circle', {cx:X(i), cy:Y(it[sr[0]]), r:4, fill:sr[1], stroke:'var(--surface)', 'stroke-width':2})); });
+      });
+    } else {
+      var bw = Math.min(18, step / 2 - 3);
+      items.forEach(function(it, i){
+        [['ing', 'var(--in)', -bw - 1], ['egr', 'var(--out)', 1]].forEach(function(sr){
+          var v = it[sr[0]], hh = v ? Math.max(2, ph * v / mx) : 0;
+          if(hh) svg.appendChild(sv('rect', {x:X(i) + sr[2], y:Tt + ph - hh, width:bw, height:hh, rx:3, fill:sr[1]}));
+        });
+      });
+    }
+    items.forEach(function(it, i){
+      var sal = it.ing - it.egr, info = {name:it.name, big:'Saldo ' + money(sal), line2:'Ingresos ' + money(it.ing) + ' · Egresos ' + money(it.egr)};
+      var hit = sv('rect', {x:L + step * i, y:Tt, width:step, height:ph, class:'hit', tabindex:'0', 'aria-label':it.name + ': ingresos ' + money(it.ing) + ', egresos ' + money(it.egr)});
+      vinc(hit, info); svg.appendChild(hit);
+    });
+    box.appendChild(svg);
+    box.appendChild(h('p',{class:'g-leg'}, h('span',null, h('i',{style:'background:var(--in)'}), document.createTextNode('Ingresos')), h('span',null, h('i',{style:'background:var(--out)'}), document.createTextNode('Egresos'))));
+  }
+  var G_TIPOS = [['out-c', 'Egresos por concepto'], ['in-c', 'Ingresos por concepto'], ['out-p', 'Egresos por @'], ['in-p', 'Ingresos por @'], ['mes', 'Mes a mes']];
   function pctTxt(c, total){ var p = c * 100 / total; return p < 1 ? '<1%' : Math.round(p) + '%'; }
   function hideTip(){ var t = $('gTip'); if(t) t.hidden = true; }
   function showTip(info, x, y){
     var t = $('gTip'), sec = t.parentNode, r = sec.getBoundingClientRect();
     t.textContent = '';
-    t.appendChild(h('strong',{text:money(info.cents)}));
+    t.appendChild(h('strong',{text:info.big || money(info.cents)}));
     t.appendChild(h('span',{text:info.name}));
     t.appendChild(h('br'));
-    t.appendChild(h('span',{text:info.pct + ' del total · ' + info.n + (info.n === 1 ? ' movimiento' : ' movimientos')}));
+    t.appendChild(h('span',{text:info.line2 || (info.pct + ' del total · ' + info.n + (info.n === 1 ? ' movimiento' : ' movimientos'))}));
     t.hidden = false;
     var left = Math.min(Math.max(8, x - r.left - t.offsetWidth / 2), Math.max(8, r.width - t.offsetWidth - 8));
     var top = y - r.top - t.offsetHeight - 12;
@@ -1067,29 +1179,80 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     gs.forEach(function(g){ sel.appendChild(h('option',{value:g.key,text:g.name})); });
     sel.value = cuentaSel;
     $('gCuentaL').textContent = gname();
-    $('gMes').textContent = mesSel === 'all' ? 'Todos los meses' : cap(mesLabel(mesSel));
-    var d = gastos(), box = $('gChart'), tb = $('gTable'), hay = d.items.length > 0;
+    var gn = gname().toLowerCase(), esMes = gSel === 'mes', porP = gSel.slice(-1) === 'p', tit = '';
+    var bar = $('gSel'), lbls = G_TIPOS.map(function(t){ return t[1].replace('@', gn); });
+    if(bar.getAttribute('data-l') !== lbls.join('|')){
+      bar.textContent = ''; bar.setAttribute('data-l', lbls.join('|'));
+      G_TIPOS.forEach(function(t, i){
+        var b = h('button',{type:'button',class:'chip','data-g':t[0],text:lbls[i]});
+        b.addEventListener('click', function(){ gSel = t[0]; verTabla = false; renderGastos(groups()); });
+        bar.appendChild(b);
+      });
+    }
+    G_TIPOS.forEach(function(t, i){ if(t[0] === gSel) tit = lbls[i]; });
+    Array.prototype.forEach.call(bar.children, function(b){ b.setAttribute('aria-pressed', String(b.getAttribute('data-g') === gSel)); });
+    if(!formaOk(gForma, esMes)) gForma = 'barras';
+    var fb = $('gForma');
+    if(!fb.children.length) G_FORMAS.forEach(function(f){
+      var b = h('button',{type:'button',class:'chip','data-f':f[0],text:f[1]});
+      b.addEventListener('click', function(){ gForma = f[0]; verTabla = false; renderGastos(groups()); });
+      fb.appendChild(b);
+    });
+    Array.prototype.forEach.call(fb.children, function(b){ var f = b.getAttribute('data-f'); b.hidden = !formaOk(f, esMes); b.setAttribute('aria-pressed', String(f === gForma)); });
+    $('gH').textContent = tit;
+    $('gCuentaBox').hidden = porP;
+    $('gChart').setAttribute('aria-label', tit + (esMes ? ', últimos 6 meses' : ', de mayor a menor'));
+    var d = esMes ? mensual() : gastos(), box = $('gChart'), tb = $('gTable'), hay = d.items.length > 0 && (!esMes || d.n > 0);
+    $('gMes').textContent = esMes ? 'Últimos 6 meses' : (mesSel === 'all' ? 'Todos los meses' : cap(mesLabel(mesSel)));
     hideTip(); box.textContent = ''; tb.textContent = '';
     $('gTabla').textContent = verTabla ? 'Ver gráfico' : 'Ver tabla';
     $('gTabla').setAttribute('aria-pressed', String(verTabla));
     $('gTabla').disabled = !hay;
+    var viz = $('gViz'); viz.textContent = ''; viz.hidden = true;
     box.hidden = verTabla || !hay; tb.hidden = !verTabla || !hay; $('gEmpty').hidden = hay;
-    $('gTotal').textContent = hay ? 'Total de egresos ' + money(d.total) + ' en ' + d.n + (d.n === 1 ? ' movimiento.' : ' movimientos.') : '';
+    $('gEmpty').textContent = esMes ? 'Todavía no hay movimientos en estos meses. Cargá uno y el gráfico se arma solo.' : 'No hay ' + (gSel.slice(0, 2) === 'in' ? 'ingresos' : 'egresos') + ' en este período. Cargá uno y el gráfico se arma solo.';
+    if(esMes){
+      $('gTotal').textContent = hay ? d.n + (d.n === 1 ? ' movimiento' : ' movimientos') + ' en estos meses. Verde: ingresos. Rojo: egresos.' : '';
+      if(!hay) return;
+      if(gForma !== 'barras' && !verTabla){ viz.hidden = false; box.hidden = true; dibujaSerie(viz, d.items, gForma); }
+      var mx = d.items.reduce(function(a, x){ return Math.max(a, x.ing, x.egr); }, 0) || 1;
+      d.items.forEach(function(it){
+        var sal = it.ing - it.egr, info = {name:it.name, big:'Saldo ' + money(sal), line2:'Ingresos ' + money(it.ing) + ' · Egresos ' + money(it.egr)};
+        var row = h('div',{class:'g-row',role:'listitem',tabindex:'0','aria-label':it.name + ': ingresos ' + money(it.ing) + ', egresos ' + money(it.egr) + ', saldo ' + money(sal)},
+          h('div',{class:'g-line'}, h('span',{class:'g-name',text:it.name}), h('span',{class:'g-val num ' + signClass(sal),text:money(sal)}), h('span',{class:'g-pct',text:''})),
+          h('div',{class:'g-bar s'}, h('i',{class:'in',style:'width:' + (it.ing ? Math.max(1.5, it.ing * 100 / mx) : 0) + '%'})),
+          h('div',{class:'g-bar s'}, h('i',{class:'out',style:'width:' + (it.egr ? Math.max(1.5, it.egr * 100 / mx) : 0) + '%'})),
+          h('p',{class:'g-cap',text:'Ingresos ' + money(it.ing) + ' · Egresos ' + money(it.egr)}));
+        row.addEventListener('pointermove', function(e){ if(e.pointerType !== 'touch') showTip(info, e.clientX, e.clientY); });
+        row.addEventListener('pointerleave', function(e){ if(e.pointerType !== 'touch') hideTip(); });
+        row.addEventListener('click', function(e){ showTip(info, e.clientX, e.clientY); e.stopPropagation(); });
+        row.addEventListener('focus', function(){ var r = row.getBoundingClientRect(); showTip(info, r.left + 40, r.top + r.height / 2); });
+        row.addEventListener('blur', hideTip);
+        box.appendChild(row);
+      });
+      var bm = h('tbody');
+      d.items.forEach(function(it){ bm.appendChild(h('tr',null, h('td',{text:it.name}), h('td',{class:'r num',text:money(it.ing)}), h('td',{class:'r num',text:money(it.egr)}), h('td',{class:'r num ' + signClass(it.ing - it.egr),text:money(it.ing - it.egr)}))); });
+      tb.appendChild(h('table',null, h('thead',null, h('tr',null, h('th',{text:'Mes'}), h('th',{class:'r',text:'Ingresos'}), h('th',{class:'r',text:'Egresos'}), h('th',{class:'r',text:'Saldo'}))), bm));
+      return;
+    }
+    var rot = gSel.slice(0, 2) === 'in' ? 'ingresos' : 'egresos';
+    $('gTotal').textContent = hay ? 'Total de ' + rot + ' ' + money(d.total) + ' en ' + d.n + (d.n === 1 ? ' movimiento.' : ' movimientos.') : '';
     if(!hay) return;
-    // Más de 8 conceptos: los 7 mayores y "Otros" en gris; la tabla lista todos.
     var show = d.items;
     if(show.length > 8){
       var rest = show.slice(7), c = 0, nn = 0;
       rest.forEach(function(x){ c += x.cents; nn += x.n; });
-      show = show.slice(0, 7).concat([{name:'Otros (' + rest.length + ' conceptos)', cents:c, n:nn, other:true}]);
+      show = show.slice(0, 7).concat([{name:'Otros (' + rest.length + (porP ? ' ' + gplural().toLowerCase() : ' conceptos') + ')', cents:c, n:nn, other:true}]);
     }
     var max = show.reduce(function(a, x){ return Math.max(a, x.cents); }, 0);
-    show.forEach(function(it){
+    var barCls = gSel.slice(0, 2) === 'in' ? 'in' : '', pie = gForma === 'torta';
+    if(pie && !verTabla){ viz.hidden = false; dibujaTorta(viz, show, d.total, tit); }
+    show.forEach(function(it, ix){
       var pt = pctTxt(it.cents, d.total), w = Math.max(1.5, it.cents * 100 / max);
       var info = {name:it.name, cents:it.cents, n:it.n, pct:pt};
-      var row = h('div',{class:'g-row',role:'listitem',tabindex:'0','aria-label':it.name + ': ' + money(it.cents) + ', ' + pt + ' del total'},
-        h('div',{class:'g-line'}, h('span',{class:'g-name',text:it.name}), h('span',{class:'g-val num',text:money(it.cents)}), h('span',{class:'g-pct',text:pt})),
-        h('div',{class:'g-bar'}, h('i',{class:it.other ? 'o' : '',style:'width:' + w + '%'})));
+      var row = h('div',{class:'g-row' + (pie ? ' pie' : ''),role:'listitem',tabindex:'0','aria-label':it.name + ': ' + money(it.cents) + ', ' + pt + ' del total'},
+        h('div',{class:'g-line'}, pie ? h('i',{class:'g-sw',style:'background:' + colorDe(it, ix)}) : null, h('span',{class:'g-name',text:it.name}), h('span',{class:'g-val num',text:money(it.cents)}), h('span',{class:'g-pct',text:pt})),
+        pie ? null : h('div',{class:'g-bar'}, h('i',{class:it.other ? 'o' : barCls,style:'width:' + w + '%'})));
       row.addEventListener('pointermove', function(e){ if(e.pointerType !== 'touch') showTip(info, e.clientX, e.clientY); });
       row.addEventListener('pointerleave', function(e){ if(e.pointerType !== 'touch') hideTip(); });
       row.addEventListener('click', function(e){ showTip(info, e.clientX, e.clientY); e.stopPropagation(); });
@@ -1102,7 +1265,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       body.appendChild(h('tr',null, h('td',{text:it.name}), h('td',{class:'r num',text:money(it.cents)}), h('td',{class:'r',text:pctTxt(it.cents, d.total)}), h('td',{class:'r',text:String(it.n)})));
     });
     tb.appendChild(h('table',null,
-      h('thead',null, h('tr',null, h('th',{text:'Concepto'}), h('th',{class:'r',text:'Monto'}), h('th',{class:'r',text:'%'}), h('th',{class:'r',text:'Mov.'}))),
+      h('thead',null, h('tr',null, h('th',{text:porP ? gname() : 'Concepto'}), h('th',{class:'r',text:'Monto'}), h('th',{class:'r',text:'%'}), h('th',{class:'r',text:'Mov.'}))),
       body));
   }
   $('gCuenta').addEventListener('change', function(){ cuentaSel = this.value; renderGastos(groups()); });
