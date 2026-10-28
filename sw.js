@@ -1,5 +1,5 @@
 // Service worker de Mis Cuentas. Subí el número de VERSION cada vez que cambies archivos.
-const VERSION = 'v32';
+const VERSION = 'v33';
 const CACHE = 'cuentas-' + VERSION;
 const FONTS = 'cuentas-fuentes';
 const ARCHIVOS = [
