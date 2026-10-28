@@ -1,5 +1,5 @@
 // Service worker de Todo en Orden. Subí el número de VERSION cada vez que cambies archivos.
-const VERSION = 'v35';
+const VERSION = 'v36';
 const CACHE = 'cuentas-' + VERSION;
 const FONTS = 'cuentas-fuentes';
 const ARCHIVOS = [

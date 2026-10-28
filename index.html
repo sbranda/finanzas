@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script>try{if(localStorage.getItem("cuentas-lock-v1"))document.documentElement.className+=" locked"}catch(e){}try{if(navigator.webdriver&&!/[?&]splash\b/.test(location.search))document.documentElement.className+=" nosplash"}catch(e){}</script>
+<script>try{if(localStorage.getItem("cuentas-lock-v1"))document.documentElement.className+=" locked"}catch(e){}try{if(navigator.webdriver&&!/[?&]splash\b/.test(location.search))document.documentElement.className+=" nosplash";if(navigator.webdriver&&!/[?&]tabs\b/.test(location.search))document.documentElement.className+=" notabs"}catch(e){}</script>
 <title>Todo en Orden</title>
 <meta name="description" content="Ingresos y egresos agrupados por persona, con saldo total en vivo.">
 <meta name="theme-color" content="#EDF0F4" media="(prefers-color-scheme: light)">
@@ -50,6 +50,29 @@ html.nosplash #splash{display:none}
 #splash .sp-bar{width:min(240px,62vw);height:6px;border-radius:99px;background:var(--line);overflow:hidden}
 #splash .sp-bar i{display:block;height:100%;border-radius:99px;background:var(--accent);transform-origin:left;transform:scaleX(0);animation:sp-fill 3s linear forwards}
 @keyframes sp-fill{to{transform:scaleX(1)}}
+/* Navegación por pestañas + formulario como hoja inferior (menos desplazamiento). En html.notabs queda el diseño de una sola página. */
+#tabbar,#sheetBack,#toast,.sh-head{display:none}
+html:not(.notabs) main{padding-bottom:calc(98px + env(safe-area-inset-bottom,0px))}
+html:not(.notabs).t-inicio main>[data-tab]:not([data-tab=inicio]),html:not(.notabs).t-resumen main>[data-tab]:not([data-tab=resumen]),html:not(.notabs).t-planes main>[data-tab]:not([data-tab=planes]),html:not(.notabs).t-ajustes main>[data-tab]:not([data-tab=ajustes]){display:none!important}
+html:not(.notabs) #tabbar{display:grid;grid-template-columns:1fr 1fr 76px 1fr 1fr;align-items:end;position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--surface);border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px))}
+#tabbar .tb{background:none;border:0;color:var(--muted);display:grid;justify-items:center;gap:3px;font:inherit;font-size:11px;font-weight:600;padding:6px 2px;min-height:50px;cursor:pointer;border-radius:10px}
+#tabbar .tb svg{width:24px;height:24px}
+#tabbar .tb[aria-current=page]{color:var(--accent)}
+#tabbar .fab{justify-self:center;display:grid;place-items:center;width:58px;height:58px;margin-top:-24px;border-radius:50%;border:0;background:var(--accent);color:var(--accent-ink);box-shadow:0 6px 16px rgba(20,32,60,.35);cursor:pointer}
+#tabbar .fab svg{width:28px;height:28px}
+html.locked #tabbar{display:none!important}
+html:not(.notabs) #sheetBack{display:block;position:fixed;inset:0;z-index:45;background:rgba(10,16,24,.5);opacity:0;visibility:hidden;transition:opacity .2s,visibility 0s .2s}
+html.sheet-open #sheetBack{opacity:1;visibility:visible;transition:opacity .2s}
+html:not(.notabs) #f{position:fixed;left:0;right:0;bottom:0;z-index:50;max-width:720px;margin:0 auto;max-height:92vh;overflow-y:auto;overscroll-behavior:contain;border-radius:18px 18px 0 0;border-bottom:0;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateY(105%);visibility:hidden;transition:transform .25s ease,visibility 0s .25s}
+html.sheet-open:not(.notabs) #f{transform:none;visibility:visible;transition:transform .25s ease}
+html:not(.notabs) .sh-head{display:flex;align-items:center;justify-content:space-between}
+.sh-head h2{margin:0;font-size:18px;font-family:var(--font-display)}
+.sh-close{background:none;border:0;color:var(--muted);font-size:26px;line-height:1;width:44px;height:44px;margin:-8px -8px -8px 0;cursor:pointer;border-radius:10px}
+html:not(.notabs) #toast{display:block;position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom,0px));z-index:60;max-width:min(92vw,520px);transform:translate(-50%,10px);background:var(--ink);color:var(--bg);padding:11px 15px;border-radius:10px;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.28);opacity:0;visibility:hidden;transition:opacity .2s,transform .2s,visibility 0s .2s}
+html:not(.notabs) #toast.show{opacity:1;visibility:visible;transform:translate(-50%,0);transition:opacity .2s,transform .2s}
+#tkSt:empty{display:none}
+html:not(.notabs) #addBtn{position:sticky;bottom:calc(-16px - env(safe-area-inset-bottom,0px));box-shadow:0 -10px 14px -6px var(--surface)}
+@media (prefers-reduced-motion:reduce){html:not(.notabs) #f,#sheetBack,#toast{transition:none!important}}
 @keyframes sp-out{to{opacity:0;visibility:hidden}}
 /* Gráfico: un solo color para las barras (nada de rampa de valor), gris para "Otros", eje tenue */
 :root{--viz-1:#2a78d6;--viz-other:#898781;--viz-axis:#c3c2b7;--warn:#c27800}
@@ -363,6 +386,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   </section>
 
   <form id="f" class="card" autocomplete="off" novalidate>
+    <div class="sh-head"><h2>Nuevo movimiento</h2><button type="button" class="sh-close" id="shClose" aria-label="Cerrar">×</button></div>
     <div class="seg" role="radiogroup" aria-label="Tipo de movimiento">
       <label class="i"><input type="radio" name="tipo" value="in"><span>Ingreso</span></label>
       <label class="o"><input type="radio" name="tipo" value="out" checked><span>Egreso</span></label>
@@ -375,17 +399,20 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     <div class="field" id="paraBox">
       <span class="lt" id="paraL">Pagado para (opcional)</span>
       <div id="paraList" class="chips" role="group" aria-labelledby="paraL"></div>
-      <p class="rec-hint" id="paraHint">Si este egreso lo pagó una cuenta por otras (por ejemplo, el hogar por Ana y Martín), tocá a quiénes. Se divide en partes iguales y quedan debiendo su parte.</p>
+      <p class="rec-hint" id="paraHint">Si lo pagó una cuenta por otras, tocá a quiénes: se divide en partes iguales.</p>
     </div>
-    <div class="field">
-      <label for="moneda">Moneda</label>
-      <select id="moneda"><option value="ARS">Pesos (ARS)</option><option value="USD">Dólares (US$)</option></select>
+    <div class="row2">
+      <div class="field">
+        <label for="moneda">Moneda</label>
+        <select id="moneda"><option value="ARS">Pesos (ARS)</option><option value="USD">Dólares (US$)</option></select>
+      </div>
+      <div class="field" id="tkBox">
+        <span class="lt">Ticket</span>
+        <button class="btn ghost" type="button" id="tkBtn">Foto del ticket</button>
+        <input type="file" id="tkFile" accept="image/*" hidden>
+      </div>
     </div>
-    <div class="field" id="tkBox">
-      <button class="btn ghost" type="button" id="tkBtn">Foto del ticket</button>
-      <input type="file" id="tkFile" accept="image/*" hidden>
-      <p class="rec-hint" id="tkSt" role="status"></p>
-    </div>
+    <p class="rec-hint" id="tkSt" role="status"></p>
     <div class="row2">
       <div class="field"><label for="monto" id="lblMonto">Monto (ARS)</label><input type="text" id="monto" inputmode="decimal" placeholder="0,00"></div>
       <div class="field"><label for="fecha">Fecha</label><input type="date" id="fecha"></div>
@@ -621,6 +648,16 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     <div>Desarrollado por @sebranda</div>
   </footer>
 </main>
+
+<div id="sheetBack"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<nav id="tabbar" aria-label="Secciones">
+  <button type="button" class="tb" data-go="inicio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg><span>Inicio</span></button>
+  <button type="button" class="tb" data-go="resumen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Resumen</span></button>
+  <button type="button" class="fab" id="fab" aria-label="Agregar movimiento"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button type="button" class="tb" data-go="planes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg><span>Planes</span></button>
+  <button type="button" class="tb" data-go="ajustes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>Ajustes</span></button>
+</nav>
 
 <script>
 (function(){
@@ -1853,7 +1890,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     $('monto').value = ''; $('concepto').value = '';
     render();
     setMsg((t === 'in' ? 'Ingreso' : 'Egreso') + ' de ' + (lm.mon === 'USD' ? moneyU(lm.usd) + ' (' + money(c) + ')' : money(c)) + ' guardado en ' + name + '.' + (nuevoConcepto ? ' "' + cn + '" quedó en la lista de conceptos.' : '') + avisoPresup(mov));
-    $('monto').focus();
+    if(NAVEG.legacy) $('monto').focus(); else { var tm = $('msg').textContent; NAVEG.closeSheet(); NAVEG.toast(tm); setMsg(''); }
   });
 
   // Formato del monto mientras se escribe: puntos de miles automáticos y coma para los centavos.
@@ -2039,6 +2076,58 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   });
   renderAi();
   setTimeout(function(){ var sp = $('splash'); if(sp && sp.parentNode) sp.parentNode.removeChild(sp); }, 3500);
+
+  // ---------- Pestañas y hoja inferior ----------
+  var NAVEG = (function(){
+    var root = document.documentElement, legacy = root.classList.contains('notabs'), cur = 'inicio', lastGesture = 0, toastT = 0;
+    var TABS = {inicio:['#usdBar', '#alerta', '#pend', 'main section.people'], resumen:['main section.mes', 'main section.gastos', 'main section.busca'],
+      planes:['#deudaDet', '#metaDet', '#presDet', '#recDet'], ajustes:['#syncCard', 'main>details.card:not([id])', '#expDet', '#lockDet', '#aiDet', 'main>footer']};
+    Object.keys(TABS).forEach(function(t){ TABS[t].forEach(function(sel){ Array.prototype.forEach.call(document.querySelectorAll(sel), function(el){ el.setAttribute('data-tab', t); }); }); });
+    function setTab(n, keepScroll){
+      if(!TABS[n]) n = 'inicio';
+      cur = n;
+      ['inicio', 'resumen', 'planes', 'ajustes'].forEach(function(t){ root.classList.toggle('t-' + t, t === n); });
+      Array.prototype.forEach.call(document.querySelectorAll('#tabbar .tb'), function(b){ if(b.getAttribute('data-go') === n) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+      if(!keepScroll) window.scrollTo(0, 0);
+    }
+    function isOpen(){ return root.classList.contains('sheet-open'); }
+    function openSheet(){
+      if(legacy || isOpen()) return;
+      root.classList.add('sheet-open');
+      try{ history.pushState({sh:1}, ''); }catch(e){}
+    }
+    function closeSheet(fromPop){
+      if(!isOpen()) return;
+      root.classList.remove('sheet-open');
+      try{ if(!fromPop && history.state && history.state.sh) history.back(); }catch(e){}
+    }
+    function toast(t){
+      var el = document.getElementById('toast'); if(!el || legacy) return;
+      el.textContent = t; el.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(function(){ el.classList.remove('show'); }, 3400);
+    }
+    // Si el código pide enfocar, abrir o mostrar algo que está en otra pestaña (por un toque del usuario), se cambia de pestaña solo.
+    function reveal(el){
+      if(legacy || !el || Date.now() - lastGesture > 900) return;
+      var f = document.getElementById('f');
+      if(f && f.contains(el)){ openSheet(); return; }
+      var t = el.closest ? el.closest('[data-tab]') : null;
+      if(t){ var n = t.getAttribute('data-tab'); if(n !== cur) setTab(n, true); if(isOpen()) closeSheet(); }
+    }
+    ['pointerdown', 'keydown', 'click', 'touchstart'].forEach(function(ev){ document.addEventListener(ev, function(){ lastGesture = Date.now(); }, true); });
+    var f0 = HTMLElement.prototype.focus; HTMLElement.prototype.focus = function(o){ reveal(this); return f0.call(this, o); };
+    var s0 = Element.prototype.scrollIntoView; Element.prototype.scrollIntoView = function(o){ reveal(this); return s0.call(this, o); };
+    var od = Object.getOwnPropertyDescriptor(HTMLDetailsElement.prototype, 'open');
+    Object.defineProperty(HTMLDetailsElement.prototype, 'open', {configurable:true, enumerable:od.enumerable, get:od.get, set:function(v){ od.set.call(this, v); if(v) reveal(this); }});
+    Array.prototype.forEach.call(document.querySelectorAll('#tabbar .tb'), function(b){ b.addEventListener('click', function(){ closeSheet(); setTab(b.getAttribute('data-go')); }); });
+    $('fab').addEventListener('click', function(){ if(isOpen()) closeSheet(); else openSheet(); });
+    $('shClose').addEventListener('click', function(){ closeSheet(); });
+    $('sheetBack').addEventListener('click', function(){ closeSheet(); });
+    document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeSheet(); });
+    window.addEventListener('popstate', function(){ closeSheet(true); });
+    var fm = $('f'); fm.setAttribute('role', 'dialog'); fm.setAttribute('aria-label', 'Nuevo movimiento');
+    if(!legacy) setTab('inicio', true);
+    return {legacy:legacy, closeSheet:closeSheet, openSheet:openSheet, toast:toast, setTab:setTab};
+  })();
 
   // ---------- Fechas con formato fijo dd/mm/aaaa ----------
   (function(){
