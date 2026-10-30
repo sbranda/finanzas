@@ -1046,11 +1046,17 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     items.sort(function(a, b){ return b.cents - a.cents || a.name.localeCompare(b.name, 'es'); });
     return {items:items, total:total, n:n};
   }
+  // Meses de calendario consecutivos (sin saltear los vacíos), hasta el elegido o el actual; empieza en el primer mes con datos si es más reciente que N meses atrás.
+  function ventana(N){
+    var e = mesSel !== 'all' && mesSel !== '0000-00' ? mesSel : today(0).slice(0, 7), first = e;
+    state.movs.forEach(function(m){ var k = monthKey(m.fecha); if(k !== '0000-00' && k < first) first = k; });
+    var start = addMonths(e, -(N - 1)); if(first > start) start = first;
+    var out = [], k = start; while(k <= e && out.length < N){ out.push(k); k = addMonths(k, 1); }
+    return out;
+  }
   // Mes a mes: ingresos y egresos de los últimos 6 meses (hasta el mes elegido, o hasta el actual).
   function mensual(){
-    var ls = mesesLista().filter(function(k){ return k !== '0000-00'; }), fin = mesSel !== 'all' ? ls.indexOf(mesSel) : ls.indexOf(today(0).slice(0, 7));
-    if(fin < 0) fin = ls.length - 1;
-    var ms = ls.slice(Math.max(0, fin - 5), fin + 1), map = {}, items = [], total = 0, n = 0;
+    var ms = ventana(6), map = {}, items = [], total = 0, n = 0;
     ms.forEach(function(k){ map[k] = {key:k, name:cap(mesLabel(k)), ing:0, egr:0, n:0}; items.push(map[k]); });
     state.movs.forEach(function(m){
       var it = map[monthKey(m.fecha)]; if(!it) return;
@@ -1072,7 +1078,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   }
   var gForma = 'barras', SVGNS = 'http://www.w3.org/2000/svg';
   var G_FORMAS = [['barras', 'Barras'], ['columnas', 'Columnas'], ['torta', 'Torta'], ['lineas', 'Líneas']];
-  function formaOk(f, esMes){ return f === 'barras' || (esMes ? (f === 'columnas' || f === 'lineas') : f === 'torta'); }
+  function formaOk(f, sel){ if(sel === 'saldo') return f === 'lineas' || f === 'columnas'; if(sel === 'mes') return f === 'barras' || f === 'columnas' || f === 'lineas'; return f === 'barras' || f === 'torta'; }
   function sv(tag, a){ var e = document.createElementNS(SVGNS, tag); for(var k in a) e.setAttribute(k, a[k]); return e; }
   function corto(c){ var v = c / 100; return '$ ' + (Math.abs(v) >= 1e6 ? (v / 1e6).toLocaleString('es-AR', {maximumFractionDigits:1}) + ' M' : Math.abs(v) >= 1e3 ? (v / 1e3).toLocaleString('es-AR', {maximumFractionDigits:1}) + ' mil' : Math.round(v).toLocaleString('es-AR')); }
   function vinc(el, info){
@@ -1142,7 +1148,56 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     box.appendChild(svg);
     box.appendChild(h('p',{class:'g-leg'}, h('span',null, h('i',{style:'background:var(--in)'}), document.createTextNode('Ingresos')), h('span',null, h('i',{style:'background:var(--out)'}), document.createTextNode('Egresos'))));
   }
-  var G_TIPOS = [['out-c', 'Egresos por concepto'], ['in-c', 'Ingresos por concepto'], ['out-p', 'Egresos por @'], ['in-p', 'Ingresos por @'], ['mes', 'Mes a mes']];
+  // Evolución del saldo: saldo acumulado al cierre de cada uno de los últimos 12 meses (hasta el mes elegido, o el actual).
+  function saldoSerie(){
+    var ms = ventana(12), map = {}, items = [], n = 0, base = 0;
+    ms.forEach(function(k){ map[k] = {key:k, name:cap(mesLabel(k)), ing:0, egr:0, sal:0, antes:0}; items.push(map[k]); });
+    state.movs.forEach(function(m){
+      if(cuentaSel !== 'all' && pkey(m.persona) !== cuentaSel) return;
+      var k = monthKey(m.fecha), sg = m.tipo === 'in' ? m.cents : -m.cents;
+      if(ms.length && k < ms[0]) base += sg;
+      var it = map[k]; if(!it) return;
+      if(m.tipo === 'in') it.ing += m.cents; else it.egr += m.cents; n++;
+    });
+    var acc = base; items.forEach(function(it){ it.antes = acc; acc += it.ing - it.egr; it.sal = acc; });
+    return {items:items, n:n};
+  }
+  function dibujaSaldo(box, items, modo){
+    var W = 320, H = 200, L = 48, Rr = 10, Tt = 12, B = 26, pw = W - L - Rr, ph = H - Tt - B;
+    var mx = Math.max(0, items.reduce(function(a, x){ return Math.max(a, x.sal); }, 0)), mn = Math.min(0, items.reduce(function(a, x){ return Math.min(a, x.sal); }, 0));
+    if(mx === mn) mx = mn + 100;
+    var svg = sv('svg', {viewBox:'0 0 ' + W + ' ' + H, role:'img', 'aria-label':'Evolución del saldo por mes, ' + (modo === 'lineas' ? 'línea' : 'columnas')});
+    function Y(v){ return Tt + ph - ph * (v - mn) / (mx - mn); }
+    var marks = [mx, mn]; if(mn < 0 && mx > 0) marks.push(0); else if(mn === 0) marks.push(mx / 2); else marks.push(mn / 2);
+    marks.forEach(function(v){
+      var y = Y(v), z = v === 0;
+      svg.appendChild(sv('line', {x1:L, x2:W - Rr, y1:y, y2:y, stroke:'var(--viz-axis)', 'stroke-width':z ? 1.2 : .5, 'stroke-dasharray':z ? '' : '3 3'}));
+      var t = sv('text', {x:L - 5, y:y + 3, 'text-anchor':'end'}); t.textContent = corto(v); svg.appendChild(t);
+    });
+    var n = items.length, step = pw / n; function X(i){ return L + step * (i + .5); }
+    var cada = n > 6 ? 2 : 1;
+    items.forEach(function(it, i){
+      if((n - 1 - i) % cada) return;
+      var t = sv('text', {x:X(i), y:H - 8, 'text-anchor':'middle'}); t.textContent = it.name.split(' ')[0].slice(0, 3) + ' ' + it.name.slice(-2); svg.appendChild(t);
+    });
+    if(modo === 'lineas'){
+      svg.appendChild(sv('polyline', {points:items.map(function(it, i){ return X(i).toFixed(1) + ',' + Y(it.sal).toFixed(1); }).join(' '), fill:'none', stroke:'var(--viz-1)', 'stroke-width':2.2, 'stroke-linejoin':'round', 'stroke-linecap':'round'}));
+      items.forEach(function(it, i){ svg.appendChild(sv('circle', {cx:X(i), cy:Y(it.sal), r:4, fill:'var(--viz-1)', stroke:'var(--surface)', 'stroke-width':2})); });
+    } else {
+      var bw = Math.min(26, step - 4), y0 = Y(0);
+      items.forEach(function(it, i){
+        var yv = Y(it.sal), top = Math.min(y0, yv), hh = Math.max(it.sal ? 2 : 0, Math.abs(y0 - yv));
+        if(hh) svg.appendChild(sv('rect', {x:X(i) - bw / 2, y:top, width:bw, height:hh, rx:3, fill:it.sal >= 0 ? 'var(--in)' : 'var(--out)'}));
+      });
+    }
+    items.forEach(function(it, i){
+      var net = it.ing - it.egr, info = {name:it.name, big:'Saldo ' + money(it.sal), line2:'En el mes: ' + (net >= 0 ? '+' : '−') + money(Math.abs(net)) + ' (ingresos ' + money(it.ing) + ' · egresos ' + money(it.egr) + ')'};
+      var hit = sv('rect', {x:L + step * i, y:Tt, width:step, height:ph, class:'hit', tabindex:'0', 'aria-label':it.name + ': saldo ' + money(it.sal)});
+      vinc(hit, info); svg.appendChild(hit);
+    });
+    box.appendChild(svg);
+  }
+  var G_TIPOS = [['out-c', 'Egresos por concepto'], ['in-c', 'Ingresos por concepto'], ['out-p', 'Egresos por @'], ['in-p', 'Ingresos por @'], ['mes', 'Mes a mes'], ['saldo', 'Evolución del saldo']];
   function pctTxt(c, total){ var p = c * 100 / total; return p < 1 ? '<1%' : Math.round(p) + '%'; }
   function hideTip(){ var t = $('gTip'); if(t) t.hidden = true; }
   function showTip(info, x, y){
@@ -1240,7 +1295,8 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     gs.forEach(function(g){ sel.appendChild(h('option',{value:g.key,text:g.name})); });
     sel.value = cuentaSel;
     $('gCuentaL').textContent = gname();
-    var gn = gname().toLowerCase(), esMes = gSel === 'mes', porP = gSel.slice(-1) === 'p', tit = '';
+    var gn = gname().toLowerCase(), esMes = gSel === 'mes', esSaldo = gSel === 'saldo', porP = gSel.slice(-1) === 'p', tit = '';
+    $('gComp').textContent = '';
     var bar = $('gSel'), lbls = G_TIPOS.map(function(t){ return t[1].replace('@', gn); });
     if(bar.getAttribute('data-l') !== lbls.join('|')){
       bar.textContent = ''; bar.setAttribute('data-l', lbls.join('|'));
@@ -1252,26 +1308,36 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     }
     G_TIPOS.forEach(function(t, i){ if(t[0] === gSel) tit = lbls[i]; });
     Array.prototype.forEach.call(bar.children, function(b){ b.setAttribute('aria-pressed', String(b.getAttribute('data-g') === gSel)); });
-    if(!formaOk(gForma, esMes)) gForma = 'barras';
+    if(!formaOk(gForma, gSel)) gForma = esSaldo ? 'lineas' : 'barras';
     var fb = $('gForma');
     if(!fb.children.length) G_FORMAS.forEach(function(f){
       var b = h('button',{type:'button',class:'chip','data-f':f[0],text:f[1]});
       b.addEventListener('click', function(){ gForma = f[0]; verTabla = false; renderGastos(groups()); });
       fb.appendChild(b);
     });
-    Array.prototype.forEach.call(fb.children, function(b){ var f = b.getAttribute('data-f'); b.hidden = !formaOk(f, esMes); b.setAttribute('aria-pressed', String(f === gForma)); });
+    Array.prototype.forEach.call(fb.children, function(b){ var f = b.getAttribute('data-f'); b.hidden = !formaOk(f, gSel); b.setAttribute('aria-pressed', String(f === gForma)); });
     $('gH').textContent = tit;
     $('gCuentaBox').hidden = porP;
-    $('gChart').setAttribute('aria-label', tit + (esMes ? ', últimos 6 meses' : ', de mayor a menor'));
-    var d = esMes ? mensual() : gastos(), box = $('gChart'), tb = $('gTable'), hay = d.items.length > 0 && (!esMes || d.n > 0);
-    $('gMes').textContent = esMes ? 'Últimos 6 meses' : (mesSel === 'all' ? 'Todos los meses' : cap(mesLabel(mesSel)));
+    $('gChart').setAttribute('aria-label', tit + (esMes ? ', últimos 6 meses' : esSaldo ? ', últimos 12 meses' : ', de mayor a menor'));
+    var d = esSaldo ? saldoSerie() : esMes ? mensual() : gastos(), box = $('gChart'), tb = $('gTable'), hay = d.items.length > 0 && (!(esMes || esSaldo) || d.n > 0);
+    $('gMes').textContent = esMes ? 'Últimos 6 meses' : esSaldo ? 'Últimos 12 meses' : (mesSel === 'all' ? 'Todos los meses' : cap(mesLabel(mesSel)));
     hideTip(); box.textContent = ''; tb.textContent = '';
     $('gTabla').textContent = verTabla ? 'Ver gráfico' : 'Ver tabla';
     $('gTabla').setAttribute('aria-pressed', String(verTabla));
     $('gTabla').disabled = !hay;
     var viz = $('gViz'); viz.textContent = ''; viz.hidden = true;
     box.hidden = verTabla || !hay; tb.hidden = !verTabla || !hay; $('gEmpty').hidden = hay;
-    $('gEmpty').textContent = esMes ? 'Todavía no hay movimientos en estos meses. Cargá uno y el gráfico se arma solo.' : 'No hay ' + (gSel.slice(0, 2) === 'in' ? 'ingresos' : 'egresos') + ' en este período. Cargá uno y el gráfico se arma solo.';
+    $('gEmpty').textContent = esSaldo ? 'Todavía no hay movimientos para mostrar la evolución. Cargá uno y el gráfico se arma solo.' : esMes ? 'Todavía no hay movimientos en estos meses. Cargá uno y el gráfico se arma solo.' : 'No hay ' + (gSel.slice(0, 2) === 'in' ? 'ingresos' : 'egresos') + ' en este período. Cargá uno y el gráfico se arma solo.';
+    if(esSaldo){
+      var it0 = d.items[0], itN = d.items[d.items.length - 1], dif = itN.sal - it0.antes;
+      $('gTotal').textContent = hay ? 'Saldo al cierre de ' + itN.name.toLowerCase() + ': ' + money(itN.sal) + '. ' + (dif === 0 ? 'No cambió' : (dif > 0 ? 'Creció ' : 'Bajó ') + money(Math.abs(dif))) + ' desde el inicio de ' + it0.name.toLowerCase() + '.' : '';
+      if(!hay) return;
+      if(!verTabla){ viz.hidden = false; box.hidden = true; dibujaSaldo(viz, d.items, gForma); }
+      var bs = h('tbody');
+      d.items.forEach(function(it){ bs.appendChild(h('tr',null, h('td',{text:it.name}), h('td',{class:'r num',text:money(it.ing)}), h('td',{class:'r num',text:money(it.egr)}), h('td',{class:'r num ' + signClass(it.sal),text:money(it.sal)}))); });
+      tb.appendChild(h('table',null, h('thead',null, h('tr',null, h('th',{text:'Mes'}), h('th',{class:'r',text:'Ingresos'}), h('th',{class:'r',text:'Egresos'}), h('th',{class:'r',text:'Saldo'}))), bs));
+      return;
+    }
     if(esMes){
       $('gTotal').textContent = hay ? d.n + (d.n === 1 ? ' movimiento' : ' movimientos') + ' en estos meses. Verde: ingresos. Rojo: egresos.' : '';
       if(!hay) return;
