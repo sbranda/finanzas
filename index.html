@@ -50,6 +50,11 @@ html.nosplash #splash{display:none}
 #splash .sp-bar{width:min(240px,62vw);height:6px;border-radius:99px;background:var(--line);overflow:hidden}
 #splash .sp-bar i{display:block;height:100%;border-radius:99px;background:var(--accent);transform-origin:left;transform:scaleX(0);animation:sp-fill 3s linear forwards}
 @keyframes sp-fill{to{transform:scaleX(1)}}
+#undoBar{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:70;width:max-content;max-width:min(94vw,540px);display:flex;align-items:center;gap:12px;background:var(--ink);color:var(--bg);padding:8px 8px 8px 16px;border-radius:12px;font-size:14px;line-height:1.35;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+html:not(.notabs) #undoBar{bottom:calc(92px + env(safe-area-inset-bottom,0px))}
+#undoBar[hidden]{display:none}
+#undoBar button{flex:none;font:inherit;font-weight:700;color:var(--bg);background:transparent;border:1px solid currentColor;border-radius:8px;min-height:40px;padding:0 14px;cursor:pointer}
+#undoBar button[hidden]{display:none}
 /* Navegación por pestañas + formulario como hoja inferior (menos desplazamiento). En html.notabs queda el diseño de una sola página. */
 #tabbar,#sheetBack,#toast,.sh-head{display:none}
 html:not(.notabs) main{padding-bottom:calc(98px + env(safe-area-inset-bottom,0px))}
@@ -685,6 +690,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
 
 <div id="sheetBack"></div>
 <div id="toast" role="status" aria-live="polite"></div>
+<div id="undoBar" role="status" aria-live="polite" hidden><span id="undoTxt"></span><button type="button" id="undoBtn">Deshacer</button></div>
 <nav id="tabbar" aria-label="Secciones">
   <button type="button" class="tb" data-go="inicio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg><span>Inicio</span></button>
   <button type="button" class="tb" data-go="resumen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Resumen</span></button>
@@ -918,7 +924,15 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
           var m = r.m, isArmed = armed === m.id;
           var del = h('button',{class:'m-del',type:'button','data-armed':isArmed?'1':'0','aria-label':'Borrar movimiento ' + (m.concepto||'sin concepto'),text:isArmed?'¿Borrar?':'Borrar'});
           del.addEventListener('click', function(){
-            if(armed === m.id){ state.movs = state.movs.filter(function(x){ return x.id !== m.id; }); armed = null; (state.deleted = state.deleted || {})[m.id] = Date.now(); touched(); render(); setMsg(''); return; }
+            if(armed === m.id){
+              state.movs = state.movs.filter(function(x){ return x.id !== m.id; }); armed = null; (state.deleted = state.deleted || {})[m.id] = Date.now(); touched(); render(); setMsg('');
+              UNDO.show('Movimiento borrado' + (m.concepto ? ': ' + m.concepto : '') + '.', function(){
+                if(state.movs.some(function(x){ return x.id === m.id; })) return;
+                m.upd = Date.now(); state.movs.push(m); if(state.deleted) delete state.deleted[m.id];
+                opened.add(pkey(m.persona)); touched(); render();
+              });
+              return;
+            }
             armed = m.id; render();
             setTimeout(function(){ if(armed === m.id){ armed = null; render(); } }, 2500);
           });
@@ -2125,7 +2139,13 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     $('monto').value = ''; $('concepto').value = '';
     render();
     setMsg((t === 'in' ? 'Ingreso' : 'Egreso') + ' de ' + (lm.mon === 'USD' ? moneyU(lm.usd) + ' (' + money(c) + ')' : money(c)) + ' guardado en ' + name + '.' + (nuevoConcepto ? ' "' + cn + '" quedó en la lista de conceptos.' : '') + avisoPresup(mov));
-    if(NAVEG.legacy) $('monto').focus(); else { var tm = $('msg').textContent; NAVEG.closeSheet(); NAVEG.toast(tm); setMsg(''); }
+    var tm = $('msg').textContent;
+    if(NAVEG.legacy) $('monto').focus(); else { NAVEG.closeSheet(); setMsg(''); }
+    UNDO.show(NAVEG.legacy ? (t === 'in' ? 'Ingreso guardado.' : 'Egreso guardado.') : tm, function(){
+      if(!state.movs.some(function(x){ return x.id === mov.id; })) return;
+      state.movs = state.movs.filter(function(x){ return x.id !== mov.id; }); (state.deleted = state.deleted || {})[mov.id] = Date.now();
+      touched(); render(); setMsg('');
+    });
   });
 
   // Formato del monto mientras se escribe: puntos de miles automáticos y coma para los centavos.
@@ -2362,6 +2382,18 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     var fm = $('f'); fm.setAttribute('role', 'dialog'); fm.setAttribute('aria-label', 'Nuevo movimiento');
     if(!legacy) setTab('inicio', true);
     return {legacy:legacy, closeSheet:closeSheet, openSheet:openSheet, toast:toast, setTab:setTab};
+  })();
+
+  // ---------- Aviso con "Deshacer" (al guardar o borrar un movimiento) ----------
+  var UNDO = (function(){
+    var bar = $('undoBar'), txt = $('undoTxt'), btn = $('undoBtn'), timer = 0, fn = null;
+    function hide(){ clearTimeout(timer); fn = null; bar.hidden = true; }
+    function show(text, undoFn){
+      clearTimeout(timer); fn = undoFn || null; txt.textContent = text; btn.hidden = !fn; bar.hidden = false;
+      timer = setTimeout(hide, fn ? 7000 : 2200);
+    }
+    btn.addEventListener('click', function(){ var f = fn; hide(); if(f){ f(); show('Listo, se deshizo.'); } });
+    return {show:show, hide:hide};
   })();
 
   // ---------- Fechas con formato fijo dd/mm/aaaa ----------
