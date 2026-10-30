@@ -1,5 +1,5 @@
 // Service worker de Crecé. Subí el número de VERSION cada vez que cambies archivos.
-const VERSION = 'v42';
+const VERSION = 'v43';
 const CACHE = 'cuentas-' + VERSION;
 const FONTS = 'cuentas-fuentes';
 const ARCHIVOS = [

@@ -328,6 +328,13 @@ textarea{font-family:var(--font-num);font-size:13px;min-height:90px;resize:verti
 .mes-grid>div{min-width:0}
 .mes-grid .num{display:block;font-size:17px;font-weight:600;overflow-wrap:anywhere}
 .mes-note{margin:12px 0 0;font-size:13px;color:var(--muted)}
+.mes-comp{margin:8px 0 0;font-size:14px;line-height:1.5;white-space:pre-line}
+.mes-comp:empty{display:none}
+.g-d{font-weight:600}
+.g-d.up{color:var(--out)}.g-d.dn{color:var(--in)}
+.g-d.inup{color:var(--in)}.g-d.indn{color:var(--out)}
+.g-sum{margin:8px 0 0;font-size:13px;color:var(--muted);line-height:1.5}
+.g-sum:empty{display:none}
 .p-acum{color:var(--muted)}
 .mov li.m-empty{display:block;color:var(--muted);font-size:13px}
 .ph-l{display:flex;align-items:center;gap:10px;min-width:0}
@@ -476,6 +483,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       <div id="mAcumBox"><span class="lbl">Acumulado</span><span id="mAcum" class="num"></span></div>
     </div>
     <p id="mNote" class="mes-note"></p>
+    <p id="mComp" class="mes-comp" aria-live="polite"></p>
   </section>
 
   <section class="gastos card" aria-labelledby="gH">
@@ -487,6 +495,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       <button class="btn ghost" type="button" id="gTabla" aria-pressed="false">Ver tabla</button>
     </div>
     <p id="gTotal" class="g-total"></p>
+    <p id="gComp" class="g-sum"></p>
     <div id="gViz" class="g-viz" hidden></div>
     <div id="gChart" class="g-chart" role="list" aria-label="Egresos por concepto, de mayor a menor"></div>
     <div id="gTable" class="g-table" hidden></div>
@@ -995,6 +1004,23 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     $('mSalL').textContent = mesSel === 'all' ? 'Saldo' : 'Saldo del mes';
     $('mAcumBox').hidden = mesSel === 'all';
     var cnt = n + (n === 1 ? ' movimiento' : ' movimientos');
+    (function(){
+      var pk = mesAntKey(), box = $('mComp');
+      if(!pk){ box.textContent = ''; return; }
+      var pi = 0, pe = 0, nom = mesNom(pk);
+      gs.forEach(function(g){ g.list.forEach(function(r){ if(monthKey(r.m.fecha) === pk){ if(r.m.tipo === 'in') pi += r.m.cents; else pe += r.m.cents; } }); });
+      function linea(cur, prev, v, mas, menos, igual, sin, aun){
+        if(!cur && !prev) return '';
+        if(!prev) return 'En ' + nom + ' no tuviste ' + sin + '.';
+        if(!cur) return aun + ' (en ' + nom + ': ' + money(prev) + ').';
+        var pc = pctCambio(cur, prev);
+        if(cur === prev || pc < 1) return v + ' lo mismo que en ' + nom + '.';
+        return v + ' ' + pc + '% ' + (cur > prev ? mas : menos) + ' que en ' + nom + ' (' + money(prev) + ').';
+      }
+      var l1 = linea(egr, pe, 'Gastaste', 'más', 'menos', '', 'egresos', 'Este mes todavía no gastaste');
+      var l2 = linea(ing, pi, 'Ingresaste', 'más', 'menos', '', 'ingresos', 'Este mes todavía no ingresaste nada');
+      box.textContent = [l1, l2].filter(Boolean).join('\n');
+    })();
     $('mNote').textContent = mesSel === 'all'
       ? cnt + ' en total.'
       : cnt + ' en ' + mesLabel(mesSel) + '. Lo que venía de meses anteriores: ' + money(prev) + '.';
@@ -1008,13 +1034,13 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   var cuentaSel = 'all', verTabla = false;
   function cap(t){ return t.charAt(0).toUpperCase() + t.slice(1); }
   var gSel = 'out-c';
-  function gastos(){
+  function gastos(mesK){
     var map = {}, items = [], total = 0, n = 0, tipo = gSel.slice(0, 2) === 'in' ? 'in' : 'out', porP = gSel.slice(-1) === 'p';
     state.movs.forEach(function(m){
-      if(m.tipo !== tipo || !enMes(m)) return;
+      if(m.tipo !== tipo || (mesK ? monthKey(m.fecha) !== mesK : !enMes(m))) return;
       if(!porP && cuentaSel !== 'all' && pkey(m.persona) !== cuentaSel) return;
       var k = porP ? pkey(m.persona) : pkey(m.concepto || ''), it = map[k];
-      if(!it){ it = map[k] = {name:porP ? m.persona : (m.concepto || 'Sin concepto'), cents:0, n:0}; items.push(it); }
+      if(!it){ it = map[k] = {key:k, name:porP ? m.persona : (m.concepto || 'Sin concepto'), cents:0, n:0}; items.push(it); }
       it.cents += m.cents; it.n++; total += m.cents; n++;
     });
     items.sort(function(a, b){ return b.cents - a.cents || a.name.localeCompare(b.name, 'es'); });
@@ -1032,6 +1058,17 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       if(m.tipo === 'in') it.ing += m.cents; else it.egr += m.cents; it.n++; n++;
     });
     return {items:items, n:n};
+  }
+  // Comparación con el mes anterior (el mes de calendario inmediato anterior al elegido).
+  function mesAntKey(){ return mesSel !== 'all' && mesSel !== '0000-00' ? addMonths(mesSel, -1) : null; }
+  function mesNom(k){ return mesLabel(k).split(' ')[0]; }
+  function pctCambio(cur, prev){ return Math.round(Math.abs(cur - prev) * 100 / prev); }
+  function deltaTxt(cur, prev, nomPrev){
+    if(!prev) return {t:'Nuevo: sin movimientos en ' + nomPrev, c:''};
+    if(cur === prev) return {t:'= Igual que en ' + nomPrev, c:''};
+    var pc = pctCambio(cur, prev);
+    if(pc < 1) return {t:'= Casi igual que en ' + nomPrev, c:''};
+    return cur > prev ? {t:'▲ ' + pc + '% más que en ' + nomPrev, c:'up'} : {t:'▼ ' + pc + '% menos que en ' + nomPrev, c:'dn'};
   }
   var gForma = 'barras', SVGNS = 'http://www.w3.org/2000/svg';
   var G_FORMAS = [['barras', 'Barras'], ['columnas', 'Columnas'], ['torta', 'Torta'], ['lineas', 'Líneas']];
@@ -1259,7 +1296,19 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       tb.appendChild(h('table',null, h('thead',null, h('tr',null, h('th',{text:'Mes'}), h('th',{class:'r',text:'Ingresos'}), h('th',{class:'r',text:'Egresos'}), h('th',{class:'r',text:'Saldo'}))), bm));
       return;
     }
-    var rot = gSel.slice(0, 2) === 'in' ? 'ingresos' : 'egresos';
+    var rot = gSel.slice(0, 2) === 'in' ? 'ingresos' : 'egresos', esIn = gSel.slice(0, 2) === 'in';
+    var pk = mesAntKey(), prevMap = {}, nomP = pk ? mesNom(pk) : '', sumTxt = '';
+    if(pk){
+      var dp = gastos(pk); dp.items.forEach(function(x){ prevMap[x.key] = x; });
+      var best = null, worst = null, u = {};
+      d.items.forEach(function(x){ u[x.key] = 1; var df = x.cents - (prevMap[x.key] ? prevMap[x.key].cents : 0); if(df > 0 && (!best || df > best.df)) best = {name:x.name, df:df}; if(df < 0 && (!worst || df < worst.df)) worst = {name:x.name, df:df}; });
+      dp.items.forEach(function(x){ if(!u[x.key] && (!worst || -x.cents < worst.df)) worst = {name:x.name, df:-x.cents}; });
+      var ps = [];
+      if(best) ps.push('Más subió: ' + best.name + ' (+' + money(best.df) + ')');
+      if(worst) ps.push('Más bajó: ' + worst.name + ' (−' + money(-worst.df) + ')');
+      sumTxt = ps.length ? ps.join('. ') + ' respecto de ' + nomP + '.' : '';
+    }
+    $('gComp').textContent = sumTxt;
     $('gTotal').textContent = hay ? 'Total de ' + rot + ' ' + money(d.total) + ' en ' + d.n + (d.n === 1 ? ' movimiento.' : ' movimientos.') : '';
     if(!hay) return;
     var show = d.items;
@@ -1273,10 +1322,13 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     if(pie && !verTabla){ viz.hidden = false; dibujaTorta(viz, show, d.total, tit); }
     show.forEach(function(it, ix){
       var pt = pctTxt(it.cents, d.total), w = Math.max(1.5, it.cents * 100 / max);
+      var dl = pk && !it.other ? deltaTxt(it.cents, prevMap[it.key] ? prevMap[it.key].cents : 0, nomP) : null;
       var info = {name:it.name, cents:it.cents, n:it.n, pct:pt};
+      if(dl) info.line2 = pt + ' del total · ' + it.n + (it.n === 1 ? ' movimiento' : ' movimientos') + ' · ' + dl.t;
       var row = h('div',{class:'g-row' + (pie ? ' pie' : ''),role:'listitem',tabindex:'0','aria-label':it.name + ': ' + money(it.cents) + ', ' + pt + ' del total'},
         h('div',{class:'g-line'}, pie ? h('i',{class:'g-sw',style:'background:' + colorDe(it, ix)}) : null, h('span',{class:'g-name',text:it.name}), h('span',{class:'g-val num',text:money(it.cents)}), h('span',{class:'g-pct',text:pt})),
-        pie ? null : h('div',{class:'g-bar'}, h('i',{class:it.other ? 'o' : barCls,style:'width:' + w + '%'})));
+        pie ? null : h('div',{class:'g-bar'}, h('i',{class:it.other ? 'o' : barCls,style:'width:' + w + '%'})),
+        dl ? h('p',{class:'g-cap'}, h('span',{class:'g-d ' + (dl.c ? (esIn ? 'in' : '') + dl.c : ''),text:dl.t})) : null);
       row.addEventListener('pointermove', function(e){ if(e.pointerType !== 'touch') showTip(info, e.clientX, e.clientY); });
       row.addEventListener('pointerleave', function(e){ if(e.pointerType !== 'touch') hideTip(); });
       row.addEventListener('click', function(e){ showTip(info, e.clientX, e.clientY); e.stopPropagation(); });
