@@ -303,6 +303,17 @@ textarea{font-family:var(--font-num);font-size:13px;min-height:90px;resize:verti
 .pr-list .m-acts{grid-column:1/-1;justify-self:end}
 .mt-ap .m-del{grid-column:auto;white-space:nowrap}
 .alerta{border-color:var(--warn);display:grid;gap:8px}
+.sdot{display:inline-flex;align-items:center;gap:6px;margin-left:12px;padding:4px 8px;border:0;border-radius:999px;background:transparent;font:inherit;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:none;color:var(--muted);cursor:pointer;vertical-align:middle}
+.sdot[hidden]{display:none}
+.sdot:hover{background:var(--surface2)}
+.sdot .d,.tbdot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--muted)}
+.sdot.ok .d,.tbdot.ok{background:var(--in)}
+.sdot.err .d,.tbdot.err{background:var(--out)}
+.sdot.busy .d,.tbdot.busy{animation:sdot-p 1s ease-in-out infinite}
+@keyframes sdot-p{50%{opacity:.35}}
+#tabbar .tb[data-go=ajustes]{position:relative}
+.tbdot{position:absolute;top:5px;left:calc(50% + 6px);border:2px solid var(--surface);width:12px;height:12px;box-sizing:border-box}
+.tbdot[hidden]{display:none}
 .resp{border-color:var(--warn);display:grid;gap:10px}
 .resp[hidden]{display:none}
 .resp h2{margin:0;font-size:16px}
@@ -422,7 +433,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
 
 <header class="top">
   <div class="wrap">
-    <div class="saldo"><span class="lbl">Saldo total</span><strong id="total">$ 0,00</strong></div>
+    <div class="saldo"><span class="lbl">Saldo total<button type="button" id="syncDot" class="sdot" hidden><i class="d"></i><span id="syncDotT"></span></button></span><strong id="total">$ 0,00</strong></div>
     <div class="split">
       <div><span class="lbl">Ingresos</span><span id="totIn" class="num in">$ 0,00</span></div>
       <div><span class="lbl">Egresos</span><span id="totOut" class="num out">$ 0,00</span></div>
@@ -759,7 +770,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   <button type="button" class="tb" data-go="resumen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Resumen</span></button>
   <button type="button" class="fab" id="fab" aria-label="Agregar movimiento"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
   <button type="button" class="tb" data-go="planes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg><span>Planes</span></button>
-  <button type="button" class="tb" data-go="ajustes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>Ajustes</span></button>
+  <button type="button" class="tb" data-go="ajustes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><i class="tbdot" id="tbDot" hidden aria-hidden="true"></i><span>Ajustes</span></button>
 </nav>
 
 <script>
@@ -3088,6 +3099,25 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       text = 'Los cambios se envían solos unos segundos después de cargarlos y al abrir la app. Si dos dispositivos cargan a la vez, se unen los movimientos de ambos.';
       if(S.err) text += ' ' + ghMsg(S.err);
     }
+    (function(){
+      var k = '', t = '';
+      if(on){
+        if(S.busy){ k = 'busy'; t = 'Sincronizando…'; }
+        else if(S.err === 'clave' || S.err === 'clavemala'){ k = 'err'; t = 'Falta la clave'; }
+        else if(S.err === 'offline' || S.err === 'red'){ k = 'pend'; t = 'Sin conexión'; }
+        else if(S.err){ k = 'err'; t = 'Error al sincronizar'; }
+        else if(state.dirty){ k = 'pend'; t = 'Pendiente'; }
+        else if(S.last){ k = 'ok'; t = 'Sincronizado'; }
+        else { k = 'pend'; t = 'Pendiente'; }
+      }
+      var b = $('syncDot'), d2 = $('tbDot');
+      b.hidden = d2.hidden = !on;
+      if(!on) return;
+      b.className = 'sdot ' + k; d2.className = 'tbdot ' + k;
+      $('syncDotT').textContent = t;
+      var tt = t + (S.last ? ' · última sincronización ' + new Date(S.last).toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit'}) : '');
+      b.title = tt; b.setAttribute('aria-label', 'Sincronización: ' + tt + '. Tocá para ver los detalles.');
+    })();
     st.textContent = '· ' + txt;
     st.className = 'sstate' + (cls ? ' ' + cls : '');
     $('syncInfo').textContent = text;
@@ -3101,6 +3131,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     }
   }
 
+  $('syncDot').addEventListener('click', function(){ var dt = $('syncCard'); dt.open = true; dt.scrollIntoView({behavior:'smooth', block:'start'}); });
   function emsg(t, err){ smsg(t, err); }
   function renderEnc(){
     var locked = S.err === 'clave' || S.err === 'clavemala', ok = cryptoOk;
