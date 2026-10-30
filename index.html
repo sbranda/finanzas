@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <script>try{if(localStorage.getItem("cuentas-lock-v1"))document.documentElement.className+=" locked"}catch(e){}try{if(navigator.webdriver&&!/[?&]splash\b/.test(location.search))document.documentElement.className+=" nosplash";if(navigator.webdriver&&!/[?&]tabs\b/.test(location.search))document.documentElement.className+=" notabs"}catch(e){}</script>
-<title>Todo en Orden</title>
+<title>Crecé</title>
 <meta name="description" content="Ingresos y egresos agrupados por persona, con saldo total en vivo.">
 <meta name="theme-color" content="#EDF0F4" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0F161E" media="(prefers-color-scheme: dark)">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Todo en Orden">
+<meta name="apple-mobile-web-app-title" content="Crecé">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icon-192.png">
@@ -122,6 +122,10 @@ input:focus-visible,textarea:focus-visible,button:focus-visible,summary:focus-vi
 #monto{font-family:var(--font-num);font-size:18px;font-weight:600}
 .row2{display:grid;grid-template-columns:1.2fr 1fr;gap:12px}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
+.sug{contain:inline-size;display:flex;gap:6px;overflow-x:auto;margin:0 -16px;padding:2px 16px 4px;scrollbar-width:none}
+.sug::-webkit-scrollbar{display:none}
+.sug .chip{flex:none;white-space:nowrap;min-height:36px}
+.sug .chip b{font-weight:700}
 .chip{font:inherit;font-size:13px;font-weight:500;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:999px;padding:5px 12px;cursor:pointer}
 .chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .preview{margin:0;min-height:2.9em;font-size:13px;color:var(--muted);display:grid;gap:2px}
@@ -349,12 +353,12 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
 <body>
 <div id="splash" aria-hidden="true">
   <img src="icon-192.png" alt="" width="132" height="132">
-  <h2>Todo en Orden</h2>
+  <h2>Crecé</h2>
   <div class="sp-bar"><i></i></div>
 </div>
 <div id="lock" role="dialog" aria-modal="true" aria-labelledby="lockT">
   <div class="lock-box">
-    <h1 id="lockT">Todo en Orden</h1>
+    <h1 id="lockT">Crecé</h1>
     <p id="lockSub">Ingresá tu PIN para abrir la app.</p>
     <form id="lockForm" novalidate>
       <label class="sr" for="lockPin">PIN</label>
@@ -418,6 +422,10 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       <label for="persona" id="lblPersona">Persona</label>
       <input type="text" id="persona" maxlength="40" placeholder="Escribí un nombre o tocá uno">
       <div id="chips" class="chips"></div>
+    </div>
+    <div class="field" id="sugBox" hidden>
+      <span class="lt" id="sugL">Frecuentes</span>
+      <div id="sugList" class="sug" role="group" aria-label="Movimientos frecuentes"></div>
     </div>
     <div class="field" id="paraBox">
       <span class="lt" id="paraL">Pagado para (opcional)</span>
@@ -576,7 +584,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
         <div class="field"><label for="ghToken">Token de GitHub</label><input type="password" id="ghToken" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ghp_…"></div>
         <div class="actions">
           <button class="btn" type="submit" id="ghConnect">Conectar</button>
-          <a class="btn ghost" id="ghNew" href="https://github.com/settings/tokens/new?scopes=gist&amp;description=Todo%20en%20Orden" target="_blank" rel="noopener">Crear token</a>
+          <a class="btn ghost" id="ghNew" href="https://github.com/settings/tokens/new?scopes=gist&amp;description=Crec%C3%A9" target="_blank" rel="noopener">Crear token</a>
         </div>
       </form>
       <div id="ghOn" class="auth" hidden>
@@ -938,6 +946,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     renderChips(gs);
     renderConceptos();
     renderPreview(gs, t);
+    renderSug();
     if(editing){
       if(!state.movs.some(function(x){ return x.id === editing.id; })) editing = null;
       else if(editing.focus){
@@ -2048,7 +2057,45 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     box.appendChild(l1); box.appendChild(l2);
   }
 
-  function renderAll(){ var gs = groups(); renderChips(gs); renderPreview(gs); }
+  // Frecuentes: las combinaciones concepto + monto más repetidas (de la persona escrita, o de todas si está vacía) para el tipo elegido.
+  function sugerencias(){
+    var t = tipo(), pk = pkey(clean($('persona').value)), map = {}, lista = [], usdOk = !!(state.cot && state.cot.v);
+    state.movs.forEach(function(m){
+      if(m.tipo !== t || (pk && pkey(m.persona) !== pk)) return;
+      var usd = m.mon === 'USD'; if(usd && !usdOk) return;
+      var k = (pk ? '' : pkey(m.persona) + '|') + pkey(m.concepto || '') + '|' + (usd ? 'U' + m.usd : m.cents), it = map[k];
+      if(!it){ it = map[k] = {persona:m.persona, concepto:m.concepto || '', cents:usd ? m.usd : m.cents, usd:usd, n:0, last:''}; lista.push(it); }
+      it.n++; if(m.fecha >= it.last){ it.last = m.fecha; it.persona = m.persona; }
+    });
+    lista.sort(function(a, b){ return b.n - a.n || (a.last < b.last ? 1 : a.last > b.last ? -1 : 0); });
+    return {items:lista.slice(0, 6), todas:!pk};
+  }
+  function aplicarSug(it, todas){
+    if(todas || !clean($('persona').value)) $('persona').value = it.persona;
+    $('moneda').value = it.usd ? 'USD' : 'ARS'; $('moneda').dispatchEvent(new Event('change', {bubbles:true}));
+    var ex = it.concepto ? conceptoExiste(tipo(), it.concepto) : null;
+    $('concepto').value = ex ? ex.n : it.concepto; syncSel();
+    $('monto').value = fmtMonto((it.cents / 100).toFixed(2).replace('.', ','), true); lastMonto = $('monto').value;
+    setMsg(''); renderAll();
+    $('addBtn').focus({preventScroll:true});
+  }
+  function renderSug(){
+    var box = $('sugBox'), list = $('sugList'), r = sugerencias();
+    var sig = r.items.map(function(x){ return x.persona + '|' + x.concepto + '|' + x.cents + x.usd + x.n; }).join('~') + '#' + r.todas + '#' + tipo() + '#' + clean($('persona').value);
+    if(box.getAttribute('data-sig') === sig) return;
+    box.setAttribute('data-sig', sig);
+    list.textContent = ''; box.hidden = !r.items.length;
+    if(!r.items.length) return;
+    $('sugL').textContent = r.todas ? 'Frecuentes' : 'Frecuentes de ' + clean($('persona').value);
+    r.items.forEach(function(it){
+      var nom = it.concepto || (tipo() === 'in' ? 'Ingreso' : 'Egreso'), mt = it.usd ? moneyU(it.cents) : money(it.cents);
+      var b = h('button',{class:'chip',type:'button','aria-label':'Cargar ' + nom + ' ' + mt + (r.todas ? ' de ' + it.persona : '') + (it.n > 1 ? ', usado ' + it.n + ' veces' : '')},
+        document.createTextNode((r.todas ? it.persona + ' · ' : '') + nom + ' · '), h('b',{text:mt}));
+      b.addEventListener('click', function(){ aplicarSug(it, r.todas); });
+      list.appendChild(b);
+    });
+  }
+  function renderAll(){ var gs = groups(); renderChips(gs); renderPreview(gs); renderSug(); }
 
   function setMsg(text, err){ var m = $('msg'); m.textContent = text; m.className = 'msg' + (err ? ' err' : ''); }
 
@@ -2701,7 +2748,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     d = d || (state.sample ? emptyData() : dataOf(state));
     if(e === undefined) e = enc;
     return fileBody(d, e).then(function(files){
-      return gh('/gists', 'POST', {description:'Todo en Orden (datos de la app, no borrar)', public:false, files:files});
+      return gh('/gists', 'POST', {description:'Crecé (datos de la app, no borrar)', public:false, files:files});
     }).then(function(g){ return g.id; });
   }
   function connect(token){
@@ -3057,7 +3104,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   }
   function bioRegister(){
     return navigator.credentials.create({publicKey:{
-      challenge:randBytes(32), rp:{name:'Todo en Orden'}, user:{id:randBytes(16), name:'cuentas', displayName:'Todo en Orden'},
+      challenge:randBytes(32), rp:{name:'Crecé'}, user:{id:randBytes(16), name:'cuentas', displayName:'Crecé'},
       pubKeyCredParams:[{type:'public-key', alg:-7}, {type:'public-key', alg:-257}],
       authenticatorSelection:{authenticatorAttachment:'platform', userVerification:'required', residentKey:'discouraged'}, timeout:60000, attestation:'none'
     }}).then(function(c){ return b64(new Uint8Array(c.rawId)); });

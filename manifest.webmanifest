@@ -1,6 +1,6 @@
 {
-  "name": "Todo en Orden",
-  "short_name": "Todo en Orden",
+  "name": "Crecé",
+  "short_name": "Crecé",
   "description": "Ingresos y egresos agrupados por persona, con saldo total en vivo.",
   "lang": "es-AR",
   "start_url": "./",
