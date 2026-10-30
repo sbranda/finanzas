@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script>try{if(localStorage.getItem("cuentas-lock-v1"))document.documentElement.className+=" locked"}catch(e){}try{if(navigator.webdriver&&!/[?&]splash\b/.test(location.search))document.documentElement.className+=" nosplash";if(navigator.webdriver&&!/[?&]tabs\b/.test(location.search))document.documentElement.className+=" notabs"}catch(e){}</script>
+<script>try{if(localStorage.getItem("cuentas-lock-v1"))document.documentElement.className+=" locked"}catch(e){}try{if(navigator.webdriver&&!/[?&]splash\b/.test(location.search))document.documentElement.className+=" nosplash";if(navigator.webdriver&&!/[?&]tabs\b/.test(location.search))document.documentElement.className+=" notabs";if(navigator.webdriver&&!/[?&]intro\b/.test(location.search))document.documentElement.className+=" nointro"}catch(e){}</script>
 <title>Crecé</title>
 <meta name="description" content="Ingresos y egresos agrupados por persona, con saldo total en vivo.">
 <meta name="theme-color" content="#EDF0F4" media="(prefers-color-scheme: light)">
@@ -45,6 +45,24 @@
 /* Pantalla de inicio: 3 segundos con el ícono, el título y una barra de progreso. Es solo visual: la app carga por detrás. */
 #splash{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;background:var(--bg);animation:sp-out .35s ease 3s forwards}
 html.nosplash #splash{display:none}
+#intro{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(10,16,24,.62)}
+#intro.open{display:flex}
+html.nointro #intro{display:none!important}
+.in-box{width:min(440px,100%);max-height:calc(100vh - 32px);overflow-y:auto;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:20px;padding:22px 20px 18px;box-shadow:0 18px 50px rgba(0,0,0,.35);display:grid;gap:14px;text-align:center}
+.in-art{height:112px;display:grid;place-items:center;color:var(--accent)}
+.in-art img{width:104px;height:104px;border-radius:24px}
+.in-art svg{width:104px;height:104px}
+.in-box h2{margin:0;font-family:var(--font-display);font-size:22px}
+.in-box p{margin:0;color:var(--muted);font-size:15px;line-height:1.5}
+.in-box ul{margin:0;padding:0;list-style:none;display:grid;gap:8px;text-align:left;font-size:14px;color:var(--ink)}
+.in-box li{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:baseline;background:var(--surface2);border-radius:10px;padding:8px 10px}
+.in-box li b{white-space:nowrap}
+.in-dots{display:flex;justify-content:center;gap:8px}
+.in-dots i{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.in-dots i.on{background:var(--accent);width:22px;border-radius:4px}
+.in-btns{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center}
+.in-btns .btn{min-height:46px}
+.in-skip{background:none;border:0;color:var(--muted);font:inherit;font-size:13px;text-decoration:underline;cursor:pointer;padding:8px;justify-self:center}
 #splash img{width:132px;height:132px;border-radius:30px;box-shadow:0 12px 32px rgba(15,22,30,.22)}
 #splash h2{margin:0;font-family:var(--font-display);font-size:30px;font-weight:700;letter-spacing:.2px;color:var(--ink)}
 #splash .sp-bar{width:min(240px,62vw);height:6px;border-radius:99px;background:var(--line);overflow:hidden}
@@ -758,10 +776,22 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   <footer>
     <button class="btn ghost" type="button" id="lockNowBtn" hidden>Bloquear ahora</button>
     <button class="btn ghost" type="button" id="installBtn" hidden>Instalar la app</button>
+    <button class="btn ghost" type="button" id="introBtn">Ver la guía de inicio</button>
     <div>Desarrollado por @sebranda</div>
   </footer>
 </main>
 
+<div id="intro" role="dialog" aria-modal="true" aria-labelledby="inT">
+  <div class="in-box">
+    <div class="in-art" id="inArt"></div>
+    <h2 id="inT"></h2>
+    <p id="inP"></p>
+    <ul id="inL"></ul>
+    <div class="in-dots" id="inDots" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="in-btns"><button type="button" class="btn ghost" id="inBack">Atrás</button><button type="button" class="btn" id="inNext">Siguiente</button></div>
+    <button type="button" class="in-skip" id="inSkip">Saltar la guía</button>
+  </div>
+</div>
 <div id="sheetBack"></div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="undoBar" role="status" aria-live="polite" hidden><span id="undoTxt"></span><button type="button" id="undoBtn">Deshacer</button></div>
@@ -2631,6 +2661,51 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     return {legacy:legacy, closeSheet:closeSheet, openSheet:openSheet, toast:toast, setTab:setTab};
   })();
 
+  // ---------- Guía de primer uso (3 pantallas) ----------
+  var INTRO = (function(){
+    var KEY = 'cuentas-intro-v1', root = document.documentElement, box = $('intro'), paso = 0, previo = null;
+    var ART = [
+      '<img src="icon-192.png" alt="">',
+      '<svg viewBox="0 0 104 104" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="52" cy="52" r="30" fill="currentColor" stroke="none"/><path d="M52 38v28M38 52h28" stroke="#fff" stroke-width="5"/><path d="M14 22l6 6M90 22l-6 6M10 52h8M94 52h-8M20 86l6-6M84 86l-6-6" stroke-width="3"/></svg>',
+      '<svg viewBox="0 0 104 104" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M52 10l34 12v26c0 22-14 38-34 46C32 86 18 70 18 48V22z"/><path d="M36 52l11 11 21-23" stroke-width="5"/></svg>'
+    ];
+    var PASOS = [
+      {t:'Bienvenido a Crecé', p:'Anotá lo que entra y lo que sale de cada persona o cuenta, y mirá el saldo total al instante. Tus datos se guardan en este dispositivo.', l:[]},
+      {t:'Cargá en pocos toques', p:'', l:[['+', 'Abre el formulario de nuevo movimiento.'], ['Frecuentes', 'Tocá uno de los más usados y se completa solo.'], ['Repetir', 'Copia un movimiento anterior con la fecha de hoy.'], ['Deslizar', 'Hacia la izquierda sobre un movimiento: Editar o Borrar.'], ['Deshacer', 'Si te equivocás, tenés unos segundos para volver atrás.']]},
+      {t:'Cuidá tus datos', p:'Para no perder nada, conectá la sincronización con tu Gist de GitHub en Ajustes y descargá una copia de vez en cuando. Un puntito de color te muestra si está todo al día. También podés proteger la app con PIN o huella.', l:[]}
+    ];
+    function pinta(){
+      var x = PASOS[paso];
+      $('inArt').innerHTML = ART[paso]; $('inT').textContent = x.t; $('inP').textContent = x.p; $('inP').hidden = !x.p;
+      var ul = $('inL'); ul.textContent = ''; ul.hidden = !x.l.length;
+      x.l.forEach(function(r){ ul.appendChild(h('li',null, h('b',{text:r[0]}), h('span',{text:r[1]}))); });
+      Array.prototype.forEach.call($('inDots').children, function(d, i){ d.className = i === paso ? 'on' : ''; });
+      $('inBack').style.visibility = paso ? 'visible' : 'hidden';
+      $('inNext').textContent = paso === PASOS.length - 1 ? 'Empezar' : 'Siguiente';
+      $('inSkip').hidden = paso === PASOS.length - 1;
+    }
+    function visto(){ try{ localStorage.setItem(KEY, '1'); }catch(e){} }
+    function abrir(){ paso = 0; pinta(); previo = document.activeElement; box.classList.add('open'); $('inNext').focus(); }
+    function cerrar(){ visto(); box.classList.remove('open'); try{ if(previo && previo.focus) previo.focus({preventScroll:true}); }catch(e){} }
+    $('inNext').addEventListener('click', function(){ if(paso >= PASOS.length - 1) cerrar(); else { paso++; pinta(); } });
+    $('inBack').addEventListener('click', function(){ if(paso > 0){ paso--; pinta(); } });
+    $('inSkip').addEventListener('click', cerrar);
+    box.addEventListener('keydown', function(e){
+      if(e.key === 'Escape'){ e.stopPropagation(); cerrar(); }
+      if(e.key === 'Tab'){ var f = [$('inBack'), $('inNext'), $('inSkip')].filter(function(b){ return !b.hidden && b.style.visibility !== 'hidden'; }); if(!f.length) return; var i = f.indexOf(document.activeElement); if(e.shiftKey && i <= 0){ e.preventDefault(); f[f.length - 1].focus(); } else if(!e.shiftKey && (i === f.length - 1 || i < 0)){ e.preventDefault(); f[0].focus(); } }
+    });
+    $('introBtn').addEventListener('click', abrir);
+    // Se muestra solo a quien empieza de cero (datos de ejemplo). Quien ya tiene datos propios no la ve.
+    function inicio(){
+      if(root.classList.contains('nointro')) return;
+      var visto0 = false; try{ visto0 = !!localStorage.getItem(KEY); }catch(e){}
+      if(visto0) return;
+      if(!state.sample){ visto(); return; }
+      abrir();
+    }
+    return {inicio:inicio, abrir:abrir};
+  })();
+
   // ---------- Aviso con "Deshacer" (al guardar o borrar un movimiento) ----------
   var UNDO = (function(){
     var bar = $('undoBar'), txt = $('undoTxt'), btn = $('undoBtn'), timer = 0, fn = null;
@@ -3587,6 +3662,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   syncButton();
   render();
   renderSync();
+  INTRO.inicio();
   if(cfg) syncNow();
 })();
 // --- PWA ---
