@@ -157,7 +157,14 @@ input:focus-visible,textarea:focus-visible,button:focus-visible,summary:focus-vi
 .bar{grid-column:1/-1;display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--line);margin-top:6px}
 .bar i{display:block;height:100%}
 .bar .bi{background:var(--in)} .bar .bo{background:var(--out)}
-.mov{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.mov{list-style:none;margin:0;padding:0;border-top:1px solid var(--line);overflow:hidden}
+.sw{position:relative;touch-action:pan-y;transition:transform .18s ease}
+.sw-act{position:absolute;left:100%;top:0;bottom:0;width:168px;display:flex}
+.sw-act button{flex:1;border:0;font:inherit;font-weight:700;font-size:14px;cursor:pointer;min-height:44px}
+.sw-act .sw-e{background:var(--accent);color:var(--accent-ink)}
+.sw-act .sw-d{background:var(--out);color:#fff}
+.sw-hint{margin:0;padding:8px 16px 0;font-size:12px;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){.sw{transition:none!important}}
 .mov li{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:10px 16px;border-bottom:1px solid var(--line)}
 .mov li:last-child{border-bottom:0}
 .m-c{min-width:0;overflow-wrap:anywhere;font-weight:500}
@@ -313,7 +320,7 @@ textarea{font-family:var(--font-num);font-size:13px;min-height:90px;resize:verti
 .b-grid[hidden]{display:none}
 .b-grid .wide{grid-column:1/-1}
 .b-sum{margin:0;font-size:13px;color:var(--muted)}
-.b-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.b-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--line);overflow:hidden}
 .b-list li{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:10px 0;border-bottom:1px solid var(--line)}
 .b-list .m-c{font-weight:600;overflow-wrap:anywhere}
 .b-list .m-meta{grid-column:1/-1;font-size:12px;color:var(--muted)}
@@ -869,6 +876,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   }
 
   function render(){
+    swHintShown = false; swClose();
     if(renaming){
       var ae = document.activeElement;
       renaming.hasFocus = !!(ae && ae.id === 'renInput');
@@ -933,26 +941,19 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
           var m = r.m, isArmed = armed === m.id;
           var del = h('button',{class:'m-del',type:'button','data-armed':isArmed?'1':'0','aria-label':'Borrar movimiento ' + (m.concepto||'sin concepto'),text:isArmed?'¿Borrar?':'Borrar'});
           del.addEventListener('click', function(){
-            if(armed === m.id){
-              state.movs = state.movs.filter(function(x){ return x.id !== m.id; }); armed = null; (state.deleted = state.deleted || {})[m.id] = Date.now(); touched(); render(); setMsg('');
-              UNDO.show('Movimiento borrado' + (m.concepto ? ': ' + m.concepto : '') + '.', function(){
-                if(state.movs.some(function(x){ return x.id === m.id; })) return;
-                m.upd = Date.now(); state.movs.push(m); if(state.deleted) delete state.deleted[m.id];
-                opened.add(pkey(m.persona)); touched(); render();
-              });
-              return;
-            }
+            if(armed === m.id){ armed = null; borrarMov(m); return; }
             armed = m.id; render();
             setTimeout(function(){ if(armed === m.id){ armed = null; render(); } }, 2500);
           });
           if(editing && editing.id === m.id && editing.donde === 'acc'){ ul.appendChild(h('li',{class:'editing'}, movForm(m))); return; }
-          ul.appendChild(h('li',null,
+          ul.appendChild(swipe(h('li',null,
             h('span',{class:'m-c',text:m.concepto || (m.tipo === 'in' ? 'Ingreso' : 'Egreso')}),
             h('span',{class:'m-a num ' + (m.tipo === 'in' ? 'in' : 'out'),text:(m.tipo === 'in' ? '+' : '−') + money(m.cents)}),
             h('span',{class:'m-meta'}, document.createTextNode((m.mon === 'USD' ? moneyU(m.usd) + ' a ' + money(m.tc) + ' · ' : '') + (m.para && m.para.length ? 'para ' + m.para.join(', ') + ' · ' : '') + ddmmyy(m.fecha) + ' · acumulado '), h('span',{class:'num',text:money(r.acc)})),
             h('span',{class:'m-acts'}, repBtn(m), editBtn(m, 'acc'), del)
-          ));
+          ), m, 'acc'));
         });
+        if(swHintOn()) card.appendChild(h('p',{class:'sw-hint',text:'Tip: deslizá un movimiento hacia la izquierda para editarlo o borrarlo.'}));
         card.appendChild(ul);
       }
       box.appendChild(card);
@@ -1263,12 +1264,12 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     sum.appendChild(h('b',{class:'num ' + signClass(ing - egr),text:money(ing - egr)}));
     res.slice(0, bf.limite).forEach(function(m){
       if(editing && editing.id === m.id && editing.donde === 'busca'){ ul.appendChild(h('li',{class:'editing'}, movForm(m))); return; }
-      ul.appendChild(h('li',null,
+      ul.appendChild(swipe(h('li',null,
         h('span',{class:'m-c',text:m.concepto || (m.tipo === 'in' ? 'Ingreso' : 'Egreso')}),
         h('span',{class:'m-a num ' + (m.tipo === 'in' ? 'in' : 'out'),text:(m.tipo === 'in' ? '+' : '−') + money(m.cents)}),
         h('span',{class:'m-meta',text:m.persona + ' · ' + ddmmyy(m.fecha) + (m.mon === 'USD' ? ' · ' + moneyU(m.usd) + ' a ' + money(m.tc) : '') + (m.para && m.para.length ? ' · para ' + m.para.join(', ') : '')}),
         h('span',{class:'m-acts'}, repBtn(m), editBtn(m, 'busca'))
-      ));
+      ), m, 'busca'));
     });
     more.hidden = res.length <= bf.limite;
     more.textContent = 'Mostrar más (' + (res.length - bf.limite) + ' restantes)';
@@ -2052,6 +2053,65 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     return b;
   }
 
+  function borrarMov(m){
+    state.movs = state.movs.filter(function(x){ return x.id !== m.id; }); (state.deleted = state.deleted || {})[m.id] = Date.now(); touched(); render(); setMsg('');
+    UNDO.show('Movimiento borrado' + (m.concepto ? ': ' + m.concepto : '') + '.', function(){
+      if(state.movs.some(function(x){ return x.id === m.id; })) return;
+      m.upd = Date.now(); state.movs.push(m); if(state.deleted) delete state.deleted[m.id];
+      opened.add(pkey(m.persona)); touched(); render();
+    });
+  }
+  // Deslizar un movimiento hacia la izquierda deja ver "Editar" y "Borrar" (en pantallas táctiles).
+  var swOpen = null, swHintShown = false, SWKEY = 'cuentas-sw-v1';
+  function swClose(){ if(swOpen){ swOpen.style.transform = ''; swOpen.classList.remove('sw-open'); swOpen = null; } }
+  function swHintOn(){
+    if(swHintShown) return false;
+    var coarse = false, seen = false;
+    try{ coarse = window.matchMedia('(pointer:coarse)').matches; }catch(e){}
+    try{ seen = !!localStorage.getItem(SWKEY); }catch(e){}
+    if(!coarse || seen) return false;
+    swHintShown = true; return true;
+  }
+  document.addEventListener('pointerdown', function(e){ if(swOpen && !swOpen.contains(e.target)) swClose(); }, true);
+  function swipe(li, m, donde){
+    var W = 168, sx = 0, sy = 0, base = 0, cur = 0, tracking = false, dragging = false, pid = null;
+    li.classList.add('sw');
+    var be = h('button',{type:'button',class:'sw-e',tabindex:'-1',text:'Editar'}), bd = h('button',{type:'button',class:'sw-d',tabindex:'-1',text:'Borrar'});
+    be.addEventListener('click', function(){ swClose(); empezarEdicion(m, donde); });
+    bd.addEventListener('click', function(){ swClose(); borrarMov(m); });
+    li.appendChild(h('div',{class:'sw-act','aria-hidden':'true'}, be, bd));
+    li.addEventListener('pointerdown', function(e){
+      if(e.pointerType === 'mouse') return;
+      sx = e.clientX; sy = e.clientY; base = li === swOpen ? -W : 0; cur = base; tracking = true; dragging = false; pid = e.pointerId;
+    });
+    li.addEventListener('pointermove', function(e){
+      if(!tracking || e.pointerId !== pid) return;
+      var dx = e.clientX - sx, dy = e.clientY - sy;
+      if(!dragging){
+        if(Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.5){
+          dragging = true; try{ li.setPointerCapture(pid); }catch(x){}
+          if(swOpen && swOpen !== li) swClose();
+          li.style.transition = 'none';
+        } else { if(Math.abs(dy) > 10) tracking = false; return; }
+      }
+      cur = Math.max(-W - 24, Math.min(0, base + dx));
+      li.style.transform = 'translateX(' + cur + 'px)';
+    });
+    function fin(e){
+      if(!tracking || e.pointerId !== pid) return;
+      tracking = false;
+      if(!dragging) return;
+      dragging = false; li.style.transition = '';
+      var abrir = e.type !== 'pointercancel' && cur < -W / 2;
+      li.style.transform = abrir ? 'translateX(' + (-W) + 'px)' : '';
+      li.classList.toggle('sw-open', abrir); swOpen = abrir ? li : (swOpen === li ? null : swOpen);
+      if(abrir){ try{ localStorage.setItem(SWKEY, '1'); }catch(x){} }
+      var stop = function(ev){ ev.stopPropagation(); ev.preventDefault(); };
+      li.addEventListener('click', stop, {capture:true, once:true}); setTimeout(function(){ li.removeEventListener("click", stop, true); }, 120);
+    }
+    li.addEventListener('pointerup', fin); li.addEventListener('pointercancel', fin);
+    return li;
+  }
   // Repetir: copia un movimiento al formulario (tipo, persona, moneda, monto, concepto, "pagado para") con la fecha de hoy.
   function repetir(m){
     if(editing) editing = null;
