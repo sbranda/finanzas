@@ -817,7 +817,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     <h2 id="inT"></h2>
     <p id="inP"></p>
     <ul id="inL"></ul>
-    <div class="in-dots" id="inDots" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="in-dots" id="inDots" aria-hidden="true"></div>
     <div class="in-btns"><button type="button" class="btn ghost" id="inBack">Atrás</button><button type="button" class="btn" id="inNext">Siguiente</button></div>
     <button type="button" class="in-skip" id="inSkip">Saltar la guía</button>
   </div>
@@ -2695,16 +2695,22 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   // ---------- Guía de primer uso (3 pantallas) ----------
   var INTRO = (function(){
     var KEY = 'cuentas-intro-v1', root = document.documentElement, box = $('intro'), paso = 0, previo = null;
+    var SV = function(inner){ return '<svg viewBox="0 0 104 104" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + inner + '</svg>'; };
     var ART = [
       '<img src="icon-192.png" alt="">',
+      SV('<rect x="14" y="26" width="76" height="56" rx="10"/><path d="M14 42h76"/><circle cx="72" cy="62" r="5" fill="currentColor"/><path d="M26 18h40" stroke-width="4"/><path d="M26 66h24" stroke-width="4"/>'),
       '<svg viewBox="0 0 104 104" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="52" cy="52" r="30" fill="currentColor" stroke="none"/><path d="M52 38v28M38 52h28" stroke="#fff" stroke-width="5"/><path d="M14 22l6 6M90 22l-6 6M10 52h8M94 52h-8M20 86l6-6M84 86l-6-6" stroke-width="3"/></svg>',
+      SV('<path d="M16 88V16M16 88h76" stroke-width="3"/><rect x="28" y="52" width="14" height="30" rx="3" fill="currentColor" stroke="none"/><rect x="50" y="34" width="14" height="48" rx="3" fill="currentColor" stroke="none"/><rect x="72" y="22" width="14" height="60" rx="3" fill="currentColor" stroke="none"/>'),
       '<svg viewBox="0 0 104 104" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M52 10l34 12v26c0 22-14 38-34 46C32 86 18 70 18 48V22z"/><path d="M36 52l11 11 21-23" stroke-width="5"/></svg>'
     ];
     var PASOS = [
       {t:'Bienvenido a Crecé', p:'Anotá lo que entra y lo que sale de cada persona o cuenta, y mirá el saldo total al instante. Tus datos se guardan en este dispositivo.', l:[]},
+      {t:'Controlá tu sueldo del mes', p:'En Inicio, la tarjeta "Sueldo del mes" te dice cuánto te queda.', l:[['Sueldo', 'Cargalo como Ingreso una vez por mes (o como recurrente en Planes).'], ['Te quedan', 'Cada gasto lo descuenta y te muestra cuánto podés gastar por día.'], ['Cada mes', 'Arranca de cero: lo que sobra no pasa al mes siguiente.']]},
       {t:'Cargá en pocos toques', p:'', l:[['+', 'Abre el formulario de nuevo movimiento.'], ['Frecuentes', 'Tocá uno de los más usados y se completa solo.'], ['Repetir', 'Copia un movimiento anterior con la fecha de hoy.'], ['Deslizar', 'Hacia la izquierda sobre un movimiento: Editar o Borrar.'], ['Deshacer', 'Si te equivocás, tenés unos segundos para volver atrás.']]},
+      {t:'Mirá tus números', p:'En la pestaña Resumen elegís qué ver y cómo.', l:[['Gráficos', 'Barras, torta, mes a mes y evolución del saldo.'], ['Comparación', 'Cuánto gastaste de más o de menos que el mes anterior, y qué concepto subió o bajó.'], ['Búsqueda', 'Encontrá cualquier movimiento por concepto, persona o monto.']]},
       {t:'Cuidá tus datos', p:'Para no perder nada, conectá la sincronización con tu Gist de GitHub en Ajustes y descargá una copia de vez en cuando. Un puntito de color te muestra si está todo al día. También podés proteger la app con PIN o huella.', l:[]}
     ];
+    (function(){ var dd = $('inDots'); PASOS.forEach(function(){ dd.appendChild(document.createElement('i')); }); })();
     function pinta(){
       var x = PASOS[paso];
       $('inArt').innerHTML = ART[paso]; $('inT').textContent = x.t; $('inP').textContent = x.p; $('inP').hidden = !x.p;
