@@ -303,6 +303,11 @@ textarea{font-family:var(--font-num);font-size:13px;min-height:90px;resize:verti
 .pr-list .m-acts{grid-column:1/-1;justify-self:end}
 .mt-ap .m-del{grid-column:auto;white-space:nowrap}
 .alerta{border-color:var(--warn);display:grid;gap:8px}
+.resp{border-color:var(--warn);display:grid;gap:10px}
+.resp[hidden]{display:none}
+.resp h2{margin:0;font-size:16px}
+.resp p{margin:0;font-size:14px}
+.resp .actions{display:flex;flex-wrap:wrap;gap:8px}
 .alerta[hidden]{display:none}
 .alerta h2{margin:0;font-size:16px}
 .alerta ul{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:14px}
@@ -426,6 +431,16 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
 </header>
 
 <main class="wrap">
+  <section class="resp card" id="resp" aria-labelledby="respH" hidden>
+    <h2 id="respH">Hacé una copia de tus datos</h2>
+    <p id="respTxt"></p>
+    <div class="actions">
+      <button class="btn" type="button" id="respMain"></button>
+      <button class="btn ghost" type="button" id="respDl">Descargar copia</button>
+      <button class="btn ghost" type="button" id="respLater">Más tarde</button>
+    </div>
+  </section>
+
   <section class="usdbar card" id="usdBar" aria-label="Dólar y cotización">
     <div class="ub-main"><span id="ubTxt"></span><button class="btn ghost" id="ubBtn" type="button">Cambiar</button></div>
     <p id="ubSub" class="ub-sub"></p>
@@ -675,6 +690,15 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
         <button class="btn ghost danger" type="button" id="wipeBtn">Borrar todo</button>
       </div>
       <p id="backupMsg" role="status"></p>
+      <p id="respInfo" class="rec-hint"></p>
+      <div class="field">
+        <label for="respDias">Recordarme hacer una copia</label>
+        <select id="respDias"><option value="3">Si pasan 3 días sin copia</option><option value="7">Si pasan 7 días sin copia</option><option value="14">Si pasan 14 días sin copia</option><option value="30">Si pasan 30 días sin copia</option><option value="0">No recordarme</option></select>
+      </div>
+      <div class="field">
+        <label for="respFile">Restaurar desde un archivo de copia (.json)</label>
+        <input type="file" id="respFile" accept=".json,application/json,text/plain">
+      </div>
     </div>
   </details>
 
@@ -994,6 +1018,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     renderConceptos();
     renderPreview(gs, t);
     renderSug();
+    renderResp();
     if(editing){
       if(!state.movs.some(function(x){ return x.id === editing.id; })) editing = null;
       else if(editing.focus){
@@ -2536,7 +2561,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   // ---------- Pestañas y hoja inferior ----------
   var NAVEG = (function(){
     var root = document.documentElement, legacy = root.classList.contains('notabs'), cur = 'inicio', lastGesture = 0, toastT = 0;
-    var TABS = {inicio:['#usdBar', '#alerta', '#pend', 'main section.people'], resumen:['main section.mes', 'main section.gastos', 'main section.busca'],
+    var TABS = {inicio:['#resp', '#usdBar', '#alerta', '#pend', 'main section.people'], resumen:['main section.mes', 'main section.gastos', 'main section.busca'],
       planes:['#deudaDet', '#metaDet', '#presDet', '#recDet'], ajustes:['#syncCard', 'main>details.card:not([id])', '#expDet', '#lockDet', '#aiDet', 'main>footer']};
     Object.keys(TABS).forEach(function(t){ TABS[t].forEach(function(sel){ Array.prototype.forEach.call(document.querySelectorAll(sel), function(el){ el.setAttribute('data-tab', t); }); }); });
     var mq = null; try{ mq = window.matchMedia('(min-width:900px)'); }catch(e){}
@@ -2632,10 +2657,50 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   $('clearSample').addEventListener('click', function(){ state = fresh(); save(); opened.clear(); render(); setMsg(''); $('persona').focus(); });
 
   function bmsg(t, err){ var m = $('backupMsg'); m.textContent = t; m.style.color = err ? 'var(--out)' : ''; }
+  // ---------- Aviso de respaldo ----------
+  // Guarda cuándo fue la última sincronización o copia (solo en este dispositivo) y avisa si pasaron más de X días.
+  var RKEY = 'cuentas-resp-v1';
+  function respaldoTxt(){ return JSON.stringify({version:2, movs:state.movs, conceptos:state.conceptos, recur:state.recur || [], presup:state.presup || [], metas:state.metas || [], aportes:state.aportes || [], saldos:state.saldos || [], cot:state.cot || null, grupo:state.grupo || null}); }
+  function respLeer(){ try{ return JSON.parse(localStorage.getItem(RKEY) || 'null') || {}; }catch(e){ return {}; } }
+  function respGuardar(o){ try{ localStorage.setItem(RKEY, JSON.stringify(o)); }catch(e){} }
+  function respMarca(k){ var o = respLeer(); o[k] = Date.now(); respGuardar(o); renderResp(); }
+  function respDiasCfg(){ var o = respLeer(); return o.dias === 0 ? 0 : (o.dias > 0 ? o.dias : 7); }
+  function hace(ts){ var d = Math.floor((Date.now() - ts) / 86400000); return d <= 0 ? 'hoy' : d === 1 ? 'hace 1 día' : 'hace ' + d + ' días'; }
+  function renderResp(){
+    var box = $('resp'); if(!box) return;
+    var hay = !state.sample && state.movs.length > 0, o = respLeer();
+    if(hay && !o.desde){ o.desde = Date.now(); respGuardar(o); }
+    var dias = respDiasCfg(), ult = Math.max(o.sync || 0, o.exp || 0), base = Math.max(ult, o.desde || 0), ahora = Date.now();
+    $('respDias').value = String(dias);
+    $('respInfo').textContent = ult ? 'Última copia: ' + hace(ult) + (ult === (o.sync || 0) && cfg ? ' (sincronización).' : ' (descarga o respaldo).') : 'Todavía no hiciste ninguna copia desde este dispositivo.';
+    var ver = hay && dias > 0 && ahora - base > dias * 86400000 && ahora > (o.snooze || 0);
+    box.hidden = !ver;
+    if(!ver) return;
+    var n = Math.floor((ahora - base) / 86400000);
+    $('respTxt').textContent = (ult ? 'Hace ' + n + ' días que no hacés una copia de tus datos.' : 'Todavía no hiciste ninguna copia de tus datos (hace ' + n + ' días que los cargás).') + (cfg ? ' Tocá "Sincronizar ahora" para subirlos a tu Gist.' : ' Están solo en este dispositivo: si se pierde o se borra la app, se pierden.');
+    $('respMain').textContent = cfg ? 'Sincronizar ahora' : 'Configurar sincronización';
+  }
+  $('respMain').addEventListener('click', function(){
+    if(cfg){ var b = $('respMain'); b.disabled = true; b.textContent = 'Sincronizando…'; (syncNow() || Promise.resolve()).then(function(){ b.disabled = false; renderResp(); if(!$('resp').hidden){ $('respTxt').textContent = 'No se pudo sincronizar ahora (' + (S.err === 'offline' ? 'sin conexión' : 'revisá la conexión o el token en Ajustes') + '). Probá de nuevo más tarde.'; } }); }
+    else { var dt = $('syncCard'); dt.open = true; dt.scrollIntoView({behavior:'smooth', block:'start'}); }
+  });
+  $('respDl').addEventListener('click', function(){
+    bajar(new Blob([respaldoTxt()], {type:'application/json'}), 'cuentas-respaldo-' + today(0) + '.json');
+    respMarca('exp'); UNDO.show('Respaldo descargado. Guardalo en un lugar seguro.');
+  });
+  $('respLater').addEventListener('click', function(){ var o = respLeer(); o.snooze = Date.now() + 86400000; respGuardar(o); renderResp(); });
+  $('respDias').addEventListener('change', function(){ var o = respLeer(); o.dias = +this.value; respGuardar(o); renderResp(); });
+  $('respFile').addEventListener('change', function(){
+    var f = this.files && this.files[0]; if(!f) return;
+    var r = new FileReader();
+    r.onload = function(){ $('backup').value = String(r.result || ''); bmsg('Archivo "' + f.name + '" cargado. Si es el correcto, tocá "Restaurar desde el texto".'); };
+    r.onerror = function(){ bmsg('No se pudo leer el archivo.', true); };
+    r.readAsText(f); this.value = '';
+  });
   $('copyBtn').addEventListener('click', function(){
-    var txt = JSON.stringify({version:2, movs:state.movs, conceptos:state.conceptos, recur:state.recur || [], presup:state.presup || [], metas:state.metas || [], aportes:state.aportes || [], saldos:state.saldos || [], cot:state.cot || null, grupo:state.grupo || null});
+    var txt = respaldoTxt();
     $('backup').value = txt;
-    var done = function(){ bmsg('Respaldo copiado. Pegalo en el mismo cuadro del otro dispositivo.'); };
+    var done = function(){ respMarca('exp'); bmsg('Respaldo copiado. Pegalo en el mismo cuadro del otro dispositivo.'); };
     var fail = function(){ $('backup').focus(); $('backup').select(); bmsg('No se pudo copiar solo. El texto quedó seleccionado: copialo a mano.', true); };
     try{ navigator.clipboard.writeText(txt).then(done, fail); }catch(e){ fail(); }
   });
@@ -2946,7 +3011,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       return opt.after ? opt.after(merged) : null;
     }).then(function(){
       if(S.seq === seq0){ state.dirty = false; save(); }
-      S.last = Date.now(); S.err = '';
+      S.last = Date.now(); S.err = ''; respMarca('sync');
     }).catch(function(e){
       S.err = e && e.status ? String(e.status) : 'red';
       // El Gist ya no existe (p. ej. otro dispositivo lo reemplazó por uno cifrado nuevo): buscar el vigente.
@@ -3259,6 +3324,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     var nombre = 'cuentas-' + today(0);
     try{
       if(xf.fmt === 'csv') bajar(buildCsv(ms), nombre + '.csv'); else bajar(buildXlsx(ms), nombre + '.xlsx');
+      respMarca('exp');
       setMsg('Se descargó ' + nombre + '.' + xf.fmt + ' con ' + ms.length + (ms.length === 1 ? ' movimiento.' : ' movimientos.'));
     }catch(err){ m.textContent = 'No se pudo generar el archivo en este navegador.'; }
   });
