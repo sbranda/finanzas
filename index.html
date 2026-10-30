@@ -58,10 +58,33 @@ html:not(.notabs) #undoBar{bottom:calc(92px + env(safe-area-inset-bottom,0px))}
 /* Navegación por pestañas + formulario como hoja inferior (menos desplazamiento). En html.notabs queda el diseño de una sola página. */
 #tabbar,#sheetBack,#toast,.sh-head{display:none}
 html:not(.notabs) main{padding-bottom:calc(98px + env(safe-area-inset-bottom,0px))}
-html:not(.notabs).t-inicio main>[data-tab]:not([data-tab=inicio]),html:not(.notabs).t-resumen main>[data-tab]:not([data-tab=resumen]),html:not(.notabs).t-planes main>[data-tab]:not([data-tab=planes]),html:not(.notabs).t-ajustes main>[data-tab]:not([data-tab=ajustes]){display:none!important}
+html:not(.notabs):not(.wide).t-inicio main [data-tab]:not([data-tab=inicio]),html:not(.notabs):not(.wide).t-resumen main [data-tab]:not([data-tab=resumen]),html:not(.notabs):not(.wide).t-planes main [data-tab]:not([data-tab=planes]),html:not(.notabs):not(.wide).t-ajustes main [data-tab]:not([data-tab=ajustes]){display:none!important}
 html:not(.notabs) #tabbar{display:grid;grid-template-columns:1fr 1fr 76px 1fr 1fr;align-items:end;position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--surface);border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px))}
 #tabbar .tb{background:none;border:0;color:var(--muted);display:grid;justify-items:center;gap:3px;font:inherit;font-size:11px;font-weight:600;padding:6px 2px;min-height:50px;cursor:pointer;border-radius:10px}
 #tabbar .tb svg{width:24px;height:24px}
+#tabbar .tb .l-w{display:none}
+.pane{display:contents}
+/* Pantalla ancha (tablet horizontal / escritorio): riel lateral, Inicio y Resumen en dos columnas. */
+@media (min-width:900px){
+html.wide body{padding-left:88px}
+html.wide .wrap{max-width:1200px}
+html.wide main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 20px;align-items:start;padding-bottom:32px}
+html.wide main>#banner{grid-column:1/-1}
+html.wide .pane{display:none;min-width:0}
+html.wide.t-inicio .pane-inicio,html.wide.t-inicio .pane-resumen,html.wide.t-resumen .pane-inicio,html.wide.t-resumen .pane-resumen{display:block}
+html.wide.t-planes .pane-planes,html.wide.t-ajustes .pane-ajustes{display:grid;grid-column:1/-1;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 20px;align-items:start}
+html.wide .pane-ajustes>footer{grid-column:1/-1}
+html.wide #tabbar{display:flex;flex-direction:column;align-items:center;gap:6px;left:0;top:0;right:auto;bottom:0;width:88px;border-top:0;border-right:1px solid var(--line);padding:16px 4px}
+html.wide #tabbar .tb{width:100%}
+html.wide #tabbar .tb[data-go=resumen]{display:none}
+html.wide #tabbar .tb .l-n{display:none}
+html.wide #tabbar .tb .l-w{display:inline}
+html.wide #tabbar .fab{order:-1;margin:0 0 14px}
+html.wide:not(.notabs) #undoBar,html.wide:not(.notabs) #toast{bottom:20px;left:calc(50% + 44px)}
+html.wide:not(.notabs) #f{left:50%;right:auto;top:50%;bottom:auto;width:min(560px,92vw);max-height:88vh;border-radius:18px;border-bottom:1px solid var(--line);padding-bottom:16px;transform:translate(-50%,-46%);opacity:0;transition:transform .2s ease,opacity .2s,visibility 0s .2s}
+html.wide.sheet-open:not(.notabs) #f{transform:translate(-50%,-50%);opacity:1;transition:transform .2s ease,opacity .2s}
+html.wide:not(.notabs) #addBtn{bottom:-16px}
+}
 #tabbar .tb[aria-current=page]{color:var(--accent)}
 #tabbar .fab{justify-self:center;display:grid;place-items:center;width:58px;height:58px;margin-top:-24px;border-radius:50%;border:0;background:var(--accent);color:var(--accent-ink);box-shadow:0 6px 16px rgba(20,32,60,.35);cursor:pointer}
 #tabbar .fab svg{width:28px;height:28px}
@@ -708,7 +731,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="undoBar" role="status" aria-live="polite" hidden><span id="undoTxt"></span><button type="button" id="undoBtn">Deshacer</button></div>
 <nav id="tabbar" aria-label="Secciones">
-  <button type="button" class="tb" data-go="inicio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg><span>Inicio</span></button>
+  <button type="button" class="tb" data-go="inicio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg><span class="l-n">Inicio</span><span class="l-w">Panel</span></button>
   <button type="button" class="tb" data-go="resumen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Resumen</span></button>
   <button type="button" class="fab" id="fab" aria-label="Agregar movimiento"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
   <button type="button" class="tb" data-go="planes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg><span>Planes</span></button>
@@ -2516,11 +2539,19 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     var TABS = {inicio:['#usdBar', '#alerta', '#pend', 'main section.people'], resumen:['main section.mes', 'main section.gastos', 'main section.busca'],
       planes:['#deudaDet', '#metaDet', '#presDet', '#recDet'], ajustes:['#syncCard', 'main>details.card:not([id])', '#expDet', '#lockDet', '#aiDet', 'main>footer']};
     Object.keys(TABS).forEach(function(t){ TABS[t].forEach(function(sel){ Array.prototype.forEach.call(document.querySelectorAll(sel), function(el){ el.setAttribute('data-tab', t); }); }); });
+    var mq = null; try{ mq = window.matchMedia('(min-width:900px)'); }catch(e){}
+    if(!legacy){
+      var mainEl = document.querySelector('main'), panes = {};
+      ['inicio', 'resumen', 'planes', 'ajustes'].forEach(function(t){ var d = document.createElement('div'); d.className = 'pane pane-' + t; panes[t] = d; });
+      Array.prototype.slice.call(mainEl.children).forEach(function(el){ var t = el.getAttribute && el.getAttribute('data-tab'); if(t && panes[t]) panes[t].appendChild(el); });
+      ['inicio', 'resumen', 'planes', 'ajustes'].forEach(function(t){ mainEl.appendChild(panes[t]); });
+    }
+    function esWide(){ return root.classList.contains('wide'); }
     function setTab(n, keepScroll){
       if(!TABS[n]) n = 'inicio';
       cur = n;
       ['inicio', 'resumen', 'planes', 'ajustes'].forEach(function(t){ root.classList.toggle('t-' + t, t === n); });
-      Array.prototype.forEach.call(document.querySelectorAll('#tabbar .tb'), function(b){ if(b.getAttribute('data-go') === n) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+      Array.prototype.forEach.call(document.querySelectorAll('#tabbar .tb'), function(b){ if(b.getAttribute('data-go') === (esWide() && n === 'resumen' ? 'inicio' : n)) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
       if(!keepScroll) window.scrollTo(0, 0);
     }
     function isOpen(){ return root.classList.contains('sheet-open'); }
@@ -2544,7 +2575,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
       var f = document.getElementById('f');
       if(f && f.contains(el)){ openSheet(); return; }
       var t = el.closest ? el.closest('[data-tab]') : null;
-      if(t){ var n = t.getAttribute('data-tab'); if(n !== cur) setTab(n, true); if(isOpen()) closeSheet(); }
+      if(t){ var n = t.getAttribute('data-tab'); var mismo = esWide() && (n === 'inicio' || n === 'resumen') && (cur === 'inicio' || cur === 'resumen'); if(n !== cur && !mismo) setTab(n, true); if(isOpen()) closeSheet(); }
     }
     ['pointerdown', 'keydown', 'click', 'touchstart'].forEach(function(ev){ document.addEventListener(ev, function(){ lastGesture = Date.now(); }, true); });
     var f0 = HTMLElement.prototype.focus; HTMLElement.prototype.focus = function(o){ reveal(this); return f0.call(this, o); };
@@ -2558,7 +2589,9 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeSheet(); });
     window.addEventListener('popstate', function(){ closeSheet(true); });
     var fm = $('f'); fm.setAttribute('role', 'dialog'); fm.setAttribute('aria-label', 'Nuevo movimiento');
-    if(!legacy) setTab('inicio', true);
+    function aplicaWide(){ root.classList.toggle('wide', !legacy && !!(mq && mq.matches)); setTab(cur, true); }
+    if(mq){ if(mq.addEventListener) mq.addEventListener('change', aplicaWide); else if(mq.addListener) mq.addListener(aplicaWide); }
+    if(!legacy){ aplicaWide(); }
     return {legacy:legacy, closeSheet:closeSheet, openSheet:openSheet, toast:toast, setTab:setTab};
   })();
 
