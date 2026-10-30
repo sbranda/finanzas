@@ -332,6 +332,23 @@ textarea{font-family:var(--font-num);font-size:13px;min-height:90px;resize:verti
 #tabbar .tb[data-go=ajustes]{position:relative}
 .tbdot{position:absolute;top:5px;left:calc(50% + 6px);border:2px solid var(--surface);width:12px;height:12px;box-sizing:border-box}
 .tbdot[hidden]{display:none}
+.sueldo{display:grid;gap:10px}
+.sueldo[hidden]{display:none}
+.sueldo h2{margin:0;font-size:16px}
+.sd-nav{display:flex;align-items:center;gap:4px;font-size:13px;color:var(--muted)}
+.sd-nav button{font:inherit;font-size:20px;line-height:1;width:40px;height:40px;border:1px solid var(--line);background:var(--surface2);color:var(--ink);border-radius:10px;cursor:pointer}
+.sd-nav button:disabled{opacity:.4;cursor:default}
+.sd-nav span{min-width:104px;text-align:center;font-weight:600;color:var(--ink)}
+.sd-big{display:grid;gap:2px}
+.sd-big .num{font-size:30px;font-weight:700;line-height:1.1}
+.sd-row{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:14px;color:var(--muted)}
+.sd-track{height:10px;background:var(--line);border-radius:5px;overflow:hidden}
+.sd-track i{display:block;height:100%;background:var(--viz-1);border-radius:5px}
+.sd-track.warn i{background:var(--warn)}
+.sd-track.over i{background:var(--out)}
+.sd-st{margin:0;font-size:14px}
+.sd-st b{font-weight:700}
+.sd-note{margin:0;font-size:12px;color:var(--muted)}
 .resp{border-color:var(--warn);display:grid;gap:10px}
 .resp[hidden]{display:none}
 .resp h2{margin:0;font-size:16px}
@@ -460,6 +477,19 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
 </header>
 
 <main class="wrap">
+  <section class="sueldo card" id="sueldo" aria-labelledby="sdH" hidden>
+    <div class="g-head">
+      <h2 id="sdH">Sueldo del mes</h2>
+      <div class="sd-nav"><button type="button" id="sdPrev" aria-label="Mes anterior">‹</button><span id="sdMes"></span><button type="button" id="sdNext" aria-label="Mes siguiente">›</button></div>
+    </div>
+    <div class="sd-big"><span class="lbl" id="sdQL">Te quedan</span><span class="num" id="sdQ"></span></div>
+    <div class="sd-row"><span>Sueldo <b class="num in" id="sdIn"></b></span><span>Gastado <b class="num out" id="sdOut"></b></span></div>
+    <div class="sd-track" id="sdTrack" role="img"><i id="sdFill"></i></div>
+    <p class="sd-st" id="sdSt" role="status"></p>
+    <button class="btn ghost" type="button" id="sdAdd" hidden>Cargar el sueldo</button>
+    <p class="sd-note">Es solo de este mes: lo que sobra no pasa al mes siguiente.</p>
+  </section>
+
   <section class="resp card" id="resp" aria-labelledby="respH" hidden>
     <h2 id="respH">Hacé una copia de tus datos</h2>
     <p id="respTxt"></p>
@@ -1060,6 +1090,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
     renderPreview(gs, t);
     renderSug();
     renderResp();
+    renderSueldo();
     if(editing){
       if(!state.movs.some(function(x){ return x.id === editing.id; })) editing = null;
       else if(editing.focus){
@@ -2602,7 +2633,7 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   // ---------- Pestañas y hoja inferior ----------
   var NAVEG = (function(){
     var root = document.documentElement, legacy = root.classList.contains('notabs'), cur = 'inicio', lastGesture = 0, toastT = 0;
-    var TABS = {inicio:['#resp', '#usdBar', '#alerta', '#pend', 'main section.people'], resumen:['main section.mes', 'main section.gastos', 'main section.busca'],
+    var TABS = {inicio:['#resp', '#sueldo', '#usdBar', '#alerta', '#pend', 'main section.people'], resumen:['main section.mes', 'main section.gastos', 'main section.busca'],
       planes:['#deudaDet', '#metaDet', '#presDet', '#recDet'], ajustes:['#syncCard', 'main>details.card:not([id])', '#expDet', '#lockDet', '#aiDet', 'main>footer']};
     Object.keys(TABS).forEach(function(t){ TABS[t].forEach(function(sel){ Array.prototype.forEach.call(document.querySelectorAll(sel), function(el){ el.setAttribute('data-tab', t); }); }); });
     var mq = null; try{ mq = window.matchMedia('(min-width:900px)'); }catch(e){}
@@ -2743,6 +2774,52 @@ footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--
   $('clearSample').addEventListener('click', function(){ state = fresh(); save(); opened.clear(); render(); setMsg(''); $('persona').focus(); });
 
   function bmsg(t, err){ var m = $('backupMsg'); m.textContent = t; m.style.color = err ? 'var(--out)' : ''; }
+  // ---------- Sueldo del mes ----------
+  // Global: ingresos del mes menos egresos del mes. No arrastra lo de meses anteriores (eso es el "Acumulado").
+  function sdMesKey(){ return mesSel !== 'all' && mesSel !== '0000-00' ? mesSel : today(0).slice(0, 7); }
+  function renderSueldo(){
+    var box = $('sueldo'); if(!box) return;
+    if(state.sample){ box.hidden = true; return; }
+    box.hidden = false;
+    var k = sdMesKey(), ing = 0, egr = 0, hoyK = today(0).slice(0, 7);
+    state.movs.forEach(function(m){ if(monthKey(m.fecha) !== k) return; if(m.tipo === 'in') ing += m.cents; else egr += m.cents; });
+    var q = ing - egr;
+    $('sdMes').textContent = cap(mesLabel(k));
+    $('sdIn').textContent = money(ing); $('sdOut').textContent = money(egr);
+    var big = $('sdQ'); big.textContent = money(Math.abs(q)); big.className = 'num ' + (q < 0 ? 'out' : q > 0 ? 'in' : '');
+    $('sdQL').textContent = ing === 0 && egr > 0 ? 'Gastado hasta ahora' : q < 0 ? 'Te pasaste por' : 'Te quedan';
+    if(ing === 0 && egr > 0){ big.textContent = money(egr); big.className = 'num out'; }
+    var tr = $('sdTrack'), fill = $('sdFill'), st = $('sdSt'), add = $('sdAdd'), pct = ing > 0 ? egr * 100 / ing : (egr > 0 ? 100 : 0);
+    tr.style.display = ing > 0 || egr > 0 ? '' : 'none';
+    fill.style.width = Math.min(100, pct) + '%';
+    tr.className = 'sd-track' + (ing > 0 && pct > 100 ? ' over' : ing > 0 && pct >= 80 ? ' warn' : '');
+    tr.setAttribute('aria-label', ing > 0 ? 'Gastaste el ' + Math.round(pct) + '% del sueldo' : 'Sin sueldo cargado');
+    add.hidden = ing > 0;
+    var t = '';
+    if(ing === 0 && egr === 0){ t = 'Todavía no cargaste el sueldo de este mes.'; }
+    else if(ing === 0){ t = 'No hay sueldo cargado en este mes: cargalo para ver cuánto te queda.'; }
+    else if(pct > 100){ t = 'Gastaste más de lo que entró este mes.'; }
+    else {
+      t = 'Usaste el ' + Math.round(pct) + '% del sueldo' + (pct >= 80 ? ': ojo, queda poco.' : '.');
+      if(k === hoyK && q > 0){
+        var hoy = new Date(), fin = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate(), dias = fin - hoy.getDate() + 1;
+        t += ' Quedan ' + dias + (dias === 1 ? ' día' : ' días') + ': unos ' + money(Math.floor(q / dias)) + ' por día.';
+      }
+    }
+    st.textContent = t;
+  }
+  $('sdPrev').addEventListener('click', function(){ mesSel = addMonths(sdMesKey(), -1); render(); });
+  $('sdNext').addEventListener('click', function(){ mesSel = addMonths(sdMesKey(), 1); render(); });
+  $('sdAdd').addEventListener('click', function(){
+    var r = document.querySelector('input[name=tipo][value=in]');
+    if(!r.checked){ r.checked = true; r.dispatchEvent(new Event('change', {bubbles:true})); }
+    var ex = conceptoExiste('in', 'Sueldo'); $('concepto').value = ex ? ex.n : 'Sueldo'; syncSel();
+    var k = sdMesKey(), hoyK = today(0).slice(0, 7); $('fecha').value = k === hoyK ? today(0) : k + '-01';
+    renderAll();
+    if(NAVEG.legacy) $('f').scrollIntoView({behavior:'smooth', block:'start'}); else NAVEG.openSheet();
+    $('persona').focus({preventScroll:true});
+  });
+
   // ---------- Aviso de respaldo ----------
   // Guarda cuándo fue la última sincronización o copia (solo en este dispositivo) y avisa si pasaron más de X días.
   var RKEY = 'cuentas-resp-v1';
