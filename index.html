@@ -441,6 +441,14 @@ html.locked body{overflow:hidden}
 footer{display:grid;justify-items:center;gap:10px;text-align:center;color:var(--muted);font-size:12px;padding-top:4px}
 @media (max-width:420px){.row2{grid-template-columns:1fr 1fr}.split{gap:14px}}
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+/* Accesibilidad: objetivos táctiles de al menos 44 px */
+.chip,.sug .chip,.g-sel .chip{min-height:44px}
+.btn.ghost{min-height:44px}
+#respFile{max-width:100%;min-height:44px}
+.field{grid-template-columns:minmax(0,1fr)}
+.field>input[type=file]{width:100%;min-width:0}
+.btn.mini{min-height:44px;min-width:44px;padding:3px 12px}
+details.card summary,.dd-det summary,.mt-det summary{padding-top:11px;padding-bottom:11px}
 </style>
 </head>
 <body>
