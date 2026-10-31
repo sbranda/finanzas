@@ -2324,14 +2324,26 @@ details.card summary,.dd-det summary,.mt-det summary{padding-top:11px;padding-bo
     renaming = null; touched(); render();
   }
 
+  var conceptosSig = '';
   function renderConceptos(){
-    var sel = $('conceptoSel'), t = tipo();
-    var list = state.conceptos.filter(function(c){ return c.t === t; }).map(function(c){ return c.n; })
-      .sort(function(a,b){ return a.localeCompare(b,'es'); });
-    sel.textContent = '';
-    sel.appendChild(h('option',{value:'',text:list.length ? 'Elegir concepto guardado…' : 'Sin conceptos guardados todavía'}));
-    list.forEach(function(n){ sel.appendChild(h('option',{value:n,text:n})); });
-    sel.disabled = !list.length;
+    var sel = $('conceptoSel'), t = tipo(), pk = pkey(clean($('persona').value)), nombre = clean($('persona').value);
+    var propios = [], vistos = {};
+    if(pk) state.movs.forEach(function(m){
+      if(m.tipo !== t || pkey(m.persona) !== pk || !m.concepto) return;
+      var ex = conceptoExiste(t, m.concepto), n = ex ? ex.n : m.concepto, k = pkey(n);
+      if(!vistos[k]){ vistos[k] = 1; propios.push(n); }
+    });
+    var filtrado = propios.length > 0;
+    var list = filtrado ? propios : state.conceptos.filter(function(c){ return c.t === t; }).map(function(c){ return c.n; });
+    list.sort(function(a,b){ return a.localeCompare(b,'es'); });
+    var sig = t + '|' + (filtrado ? pk : '*') + '|' + list.join('~');
+    if(sig !== conceptosSig){
+      conceptosSig = sig;
+      sel.textContent = '';
+      sel.appendChild(h('option',{value:'',text:list.length ? (filtrado ? 'Conceptos de ' + nombre + '…' : 'Elegir concepto guardado…') : 'Sin conceptos guardados todavía'}));
+      list.forEach(function(n){ sel.appendChild(h('option',{value:n,text:n})); });
+      sel.disabled = !list.length;
+    }
     syncSel();
   }
   function syncSel(){
@@ -2415,7 +2427,7 @@ details.card summary,.dd-det summary,.mt-det summary{padding-top:11px;padding-bo
       list.appendChild(b);
     });
   }
-  function renderAll(){ var gs = groups(); renderChips(gs); renderPreview(gs); renderSug(); }
+  function renderAll(){ var gs = groups(); renderConceptos(); renderChips(gs); renderPreview(gs); renderSug(); }
 
   function setMsg(text, err){ var m = $('msg'); m.textContent = text; m.className = 'msg' + (err ? ' err' : ''); }
 
