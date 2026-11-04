@@ -2594,22 +2594,24 @@ details.card summary,.dd-det summary,.mt-det summary{padding-top:11px;padding-bo
     lastMonto = out;
   });
 
-  // Mismo formato en vivo para los otros campos de monto (saldos reales, presupuestos, recurrentes).
-  ['bMonto', 'pMonto', 'rMonto'].forEach(function(id){
-    var el = $(id), ult = '';
-    el.addEventListener('input', function(e){
-      var raw = el.value, pos = el.selectionStart == null ? raw.length : el.selectionStart;
-      if(e.inputType === 'deleteContentBackward' && ult.length === raw.length + 1 && ult.charAt(pos) === '.' && pos > 0){ raw = raw.slice(0, pos - 1) + raw.slice(pos); pos--; }
-      var out = fmtMonto(raw, e.inputType === 'insertFromPaste'), np = out.length;
-      if(pos < raw.length){
-        var k = (raw.slice(0, pos).match(/[\d,]/g) || []).length, n = 0; np = 0;
-        if(k > 0){ for(var i = 0; i < out.length; i++){ if(/[\d,]/.test(out.charAt(i))) n++; if(n === k){ np = i + 1; break; } } if(n < k) np = out.length; }
-      }
-      if(out !== el.value) el.value = out;
-      try{ el.setSelectionRange(np, np); }catch(x){}
-      ult = out;
-    });
+  // Mismo formato en vivo para todos los demás campos de monto (metas, saldos reales, presupuestos, recurrentes,
+  // cotización, pagos, edición). Un solo oyente delegado cubre también los campos que se crean después.
+  var ultMonto = typeof WeakMap === 'function' ? new WeakMap() : null;
+  document.addEventListener('input', function(e){
+    var el = e.target;
+    if(!el || el.tagName !== 'INPUT' || el.id === 'monto' || el.getAttribute('inputmode') !== 'decimal') return;
+    var ult = (ultMonto && ultMonto.get(el)) || '', raw = el.value, pos = el.selectionStart == null ? raw.length : el.selectionStart;
+    if(e.inputType === 'deleteContentBackward' && ult.length === raw.length + 1 && ult.charAt(pos) === '.' && pos > 0){ raw = raw.slice(0, pos - 1) + raw.slice(pos); pos--; }
+    var out = fmtMonto(raw, e.inputType === 'insertFromPaste'), np = out.length;
+    if(pos < raw.length){
+      var k = (raw.slice(0, pos).match(/[\d,]/g) || []).length, n = 0; np = 0;
+      if(k > 0){ for(var i = 0; i < out.length; i++){ if(/[\d,]/.test(out.charAt(i))) n++; if(n === k){ np = i + 1; break; } } if(n < k) np = out.length; }
+    }
+    if(out !== el.value) el.value = out;
+    try{ el.setSelectionRange(np, np); }catch(x){}
+    if(ultMonto) ultMonto.set(el, out);
   });
+
   ['persona','monto'].forEach(function(id){ $(id).addEventListener('input', function(){ setMsg(''); renderAll(); }); });
   Array.prototype.forEach.call(document.querySelectorAll('input[name=tipo]'), function(r){
     r.addEventListener('change', function(){ syncButton(); renderConceptos(); renderAll(); renderPara(groups()); });
